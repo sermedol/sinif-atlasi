@@ -3373,7 +3373,7 @@
 
       <aside id="detailPanel" class="right" aria-label="Direniş detay paneli">
         <header class="case-head">
-          <div class="module-title"><span>Direniş Kartı</span><span id="caseId">-</span></div>
+          <div class="module-title"><span>Direniş Kartı</span></div>
           <button id="closePanel" class="panel-close" type="button" aria-label="Detay panelini kapat">×</button>
           <h2 id="caseTitle">Kayıt seç</h2>
           <div id="caseMeta" class="case-meta"></div>
@@ -3613,7 +3613,6 @@
       visibleCount: document.getElementById("visibleCount"),
       activeCount: document.getElementById("activeCount"),
       caseTitle: document.getElementById("caseTitle"),
-      caseId: document.getElementById("caseId"),
       caseMeta: document.getElementById("caseMeta"),
       fitFiltered: document.getElementById("fitFiltered"),
       focusTurkey: document.getElementById("focusTurkey"),
@@ -4339,7 +4338,6 @@
         return;
       }
       els.caseTitle.textContent = value(row, fields.title);
-      els.caseId.textContent = "seçili";
       els.caseMeta.innerHTML = `
         <span class="tag">${esc(value(row, fields.area))}</span>
         <span class="tag">${esc(value(row, fields.status))}</span>
@@ -4706,7 +4704,7 @@
             <h3>Umut-Sen Paylaşımları</h3>
             <div id="socialEmbedX" class="social-embed"><div class="loading">Umut-Sen paylaşımları yükleniyor...</div></div>
             <div class="live-actions">
-              <a class="live-link" id="socialXFallback" href="https://x.com/umutsendikasi_" target="_blank" rel="noopener" hidden>X'te ara</a>
+              <a class="live-link" id="socialXFallback" href="https://x.com/umutsendikasi_" target="_blank" rel="noopener" hidden>Umut-Sen'de ara</a>
               <a class="live-link" href="https://www.instagram.com/umut_sendikasi" target="_blank" rel="noopener">Instagram'da Umut-Sen</a>
             </div>
           </section>
@@ -4774,7 +4772,7 @@
         const iframe = container.querySelector("iframe");
         const rendered = iframe && iframe.getBoundingClientRect().height > 40;
         if (!rendered) {
-          container.innerHTML = '<div class="empty">Umut-Sen paylaşımları şu an yüklenemedi.</div>';
+          container.innerHTML = "";
           if (fallback) fallback.hidden = false;
         }
       }, 4500);
