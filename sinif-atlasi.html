@@ -3581,6 +3581,7 @@
       location: "Yer",
       actors: "Özne",
       reason: "Neden/Talepler",
+      startDate: "Başlangıç tarihi",
       time: "Zaman/Gün",
       method: "Eylem biçimi",
       status: "Durum",
@@ -3733,7 +3734,8 @@
       "Yer": ["Yer", "Nerede", "Lokasyon", "Şehir", "Sehir"],
       "Özne": ["Özne", "Ozne", "Kim", "Aktörler", "Aktorler"],
       "Neden/Talepler": ["Neden/Talepler", "Neden", "Talep", "Talepler", "Gerekçe", "Gerekce"],
-      "Zaman/Gün": ["Zaman/Gün", "Zaman/Gun", "Ne zaman / kaçıncı gün", "Güncel zaman/gün", "Guncel zaman/gun", "Ne zaman", "Kaçıncı gün", "Kacinci gun", "Tarih", "Süre", "Sure"],
+      "Başlangıç tarihi": ["Başlangıç tarihi", "Baslangic tarihi", "Başlangıç", "Baslangic", "Tarih"],
+      "Zaman/Gün": ["Zaman/Gün", "Zaman/Gun", "Ne zaman / kaçıncı gün", "Güncel zaman/gün", "Guncel zaman/gun", "Ne zaman", "Kaçıncı gün", "Kacinci gun", "Süre", "Sure"],
       "Eylem biçimi": ["Eylem biçimi", "Eylem bicimi", "Nasıl", "Nasil", "Yöntem", "Yontem"],
       "Durum": ["Durum", "Durum / sonuç", "Durum / sonuc", "Sonuç", "Sonuc", "Status"],
       "Bilgiler": ["Bilgiler", "Bilgi", "Son gelişme", "Son gelisme", "Gelişme", "Gelisme", "Son durum", "Latest"]
@@ -4284,7 +4286,7 @@
       }).join("");
       return `
         <div class="claim">
-          <b>Nerede</b>
+          <b>Yer</b>
           <span>${esc(locationText)}</span>
           ${coordRows ? `<div class="coord-list">${coordRows}</div>` : ""}
         </div>
@@ -4680,8 +4682,12 @@
             </div>
           </div>
           ${locationSection(row)}
-          ${claim("Talep / neden", value(row, fields.reason))}
-          ${claim("Son gelişme", value(row, fields.latest))}
+          ${claim("Özne", value(row, fields.actors))}
+          ${claim("Neden/Talepler", value(row, fields.reason))}
+          ${claim("Başlangıç tarihi", value(row, fields.startDate))}
+          ${claim("Zaman/Gün", value(row, fields.time))}
+          ${claim("Eylem biçimi", value(row, fields.method))}
+          ${claim("Bilgiler", value(row, fields.latest))}
           <section class="summary-news-card" aria-label="Bu direnişe ait son haberler">
             <div class="summary-news-head">
               <h3>Son 3 alakalı haber</h3>
@@ -6481,11 +6487,15 @@
     function renderOverview(row) {
       return `
         <div class="detail-section">
-          ${claim("Konum", value(row, fields.location))}
-          ${claim("Aktörler", value(row, fields.actors))}
-          ${claim("Neden / talep", value(row, fields.reason))}
+          ${claim("Alan", value(row, fields.area))}
+          ${claim("Yer", value(row, fields.location))}
+          ${claim("Özne", value(row, fields.actors))}
+          ${claim("Neden/Talepler", value(row, fields.reason))}
+          ${claim("Başlangıç tarihi", value(row, fields.startDate))}
+          ${claim("Zaman/Gün", value(row, fields.time))}
           ${claim("Eylem biçimi", value(row, fields.method))}
-          ${claim("Son gelişme", value(row, fields.latest))}
+          ${claim("Durum", value(row, fields.status))}
+          ${claim("Bilgiler", value(row, fields.latest))}
         </div>
       `;
     }
@@ -6581,7 +6591,11 @@
       const matrix = (response.table.rows || []).map((row) => (row.c || []).map((cell) => cell ? String(cell.f ?? cell.v ?? "") : ""));
       const headerIndex = matrix.findIndex((row) => norm(row[0]) === norm(fields.area));
       if (headerIndex === -1) throw new Error("Başlık satırı okunamadı.");
-      const headers = matrix[headerIndex].map((header) => String(header || "").trim());
+      const headers = matrix[headerIndex].map((header, index) => {
+        const text = String(header || "").trim();
+        if (!text && response.table.cols?.[index]?.type === "date") return fields.startDate;
+        return text;
+      });
       return matrix.slice(headerIndex + 1).map((row) => {
         const item = {};
         headers.forEach((header, index) => {
