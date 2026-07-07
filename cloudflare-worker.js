@@ -77,16 +77,49 @@ function corsHeaders() {
   };
 }
 
-// NOT: Sayfa (Page) erişim jetonları, uzun ömürlü bir Kullanıcı jetonundan
-// türetildiyse zaten kendiliğinden süresiz/uzun ömürlü olur. Bu yüzden burada
-// EK bir "fb_exchange_token" değişimi YAPMIYORUZ — o mekanizma Kullanıcı
-// jetonları içindir ve bir Sayfa jetonuna uygulanırsa onu bozup tekrar bir
-// Kullanıcı jetonuna çevirebilir (yaşanan hatanın sebebi buydu).
+// Doğru ve KALICI Sayfa jetonu akışı:
+// 1. Kısa ömürlü bir KULLANICI jetonu (FB_USER_TOKEN), App ID/Secret ile
+//    uzun ömürlü (~60 gün) bir Kullanıcı jetonuna çevrilir.
+// 2. O uzun ömürlü Kullanıcı jetonuyla Sayfa'nın KENDİ jetonu istenir
+//    (/{page-id}?fields=access_token). Bu şekilde alınan Sayfa jetonu,
+//    kullanıcı Sayfa yöneticisi kaldığı sürece SÜRESİZ geçerli olur.
+// Worker'ın çalıştığı süre boyunca bellekte tutulur; her istekte bu iki
+// adım tekrarlanmaz.
+const pageTokenCache = {};
+
+async function getPageAccessToken(env, pageId) {
+  const now = Date.now();
+  const cached = pageTokenCache[pageId];
+  if (cached && now < cached.expiry) return cached.token;
+  if (!env.FB_APP_ID || !env.FB_APP_SECRET || !env.FB_USER_TOKEN) return null;
+
+  try {
+    const exchangeUrl = `https://graph.facebook.com/v21.0/oauth/access_token` +
+      `?grant_type=fb_exchange_token&client_id=${encodeURIComponent(env.FB_APP_ID)}` +
+      `&client_secret=${encodeURIComponent(env.FB_APP_SECRET)}` +
+      `&fb_exchange_token=${encodeURIComponent(env.FB_USER_TOKEN)}`;
+    const exchangeResponse = await fetch(exchangeUrl);
+    const exchangeData = await exchangeResponse.json();
+    const longLivedUserToken = exchangeData.access_token || env.FB_USER_TOKEN;
+
+    const pageUrl = `https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}` +
+      `?fields=access_token&access_token=${encodeURIComponent(longLivedUserToken)}`;
+    const pageResponse = await fetch(pageUrl);
+    const pageData = await pageResponse.json();
+    if (pageData.access_token) {
+      pageTokenCache[pageId] = { token: pageData.access_token, expiry: now + 24 * 60 * 60 * 1000 };
+      return pageTokenCache[pageId].token;
+    }
+  } catch {}
+  return null;
+}
+
 async function handleSocial(requestUrl, env) {
   const kind = requestUrl.searchParams.get("social");
-  const token = env.FB_PAGE_TOKEN || null;
+  const pageId = requestUrl.searchParams.get("pageId") || requestUrl.searchParams.get("igId");
+  const token = pageId ? await getPageAccessToken(env, pageId) : null;
   if (!token) {
-    return new Response(JSON.stringify({ error: "Token yapılandırılmamış." }), {
+    return new Response(JSON.stringify({ error: "Token yapılandırılmamış veya alınamadı." }), {
       status: 500,
       headers: { ...corsHeaders(), "Content-Type": "application/json" }
     });
