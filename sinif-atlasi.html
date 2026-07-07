@@ -1218,6 +1218,18 @@
       overflow: hidden;
     }
 
+    .press-link-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .press-link {
+      justify-content: flex-start;
+      text-align: left;
+      white-space: normal;
+      line-height: 1.3;
+    }
+
     .social-embed .twitter-timeline {
       display: block;
       width: 100%;
@@ -3605,7 +3617,8 @@
       time: "Zaman/Gün",
       method: "Eylem biçimi",
       status: "Durum",
-      latest: "Bilgiler"
+      latest: "Bilgiler",
+      pressLinks: "Yazı/ Haber"
     };
 
     const els = {
@@ -3759,7 +3772,8 @@
       "Zaman/Gün": ["Zaman/Gün", "Zaman/Gun", "Ne zaman / kaçıncı gün", "Güncel zaman/gün", "Guncel zaman/gun", "Ne zaman", "Kaçıncı gün", "Kacinci gun", "Süre", "Sure"],
       "Eylem biçimi": ["Eylem biçimi", "Eylem bicimi", "Nasıl", "Nasil", "Yöntem", "Yontem"],
       "Durum": ["Durum", "Durum / sonuç", "Durum / sonuc", "Sonuç", "Sonuc", "Status"],
-      "Bilgiler": ["Bilgiler", "Bilgi", "Son gelişme", "Son gelisme", "Gelişme", "Gelisme", "Son durum", "Latest"]
+      "Bilgiler": ["Bilgiler", "Bilgi", "Son gelişme", "Son gelisme", "Gelişme", "Gelisme", "Son durum", "Latest"],
+      "Yazı/ Haber": ["Yazı/ Haber", "Yazı/Haber", "Haber yazı", "Haber/Yazı", "Haber", "Yazı", "Yazi", "Haber linki", "Haber linkleri"]
     };
 
     function keyNorm(text) {
@@ -4726,9 +4740,43 @@
       `;
     }
 
+    function pressLinksFor(row) {
+      const raw = value(row, fields.pressLinks);
+      if (!raw) return [];
+      const urls = raw.match(/https?:\/\/\S+/g) || [];
+      return urls.map((url) => {
+        const clean = url.replace(/[),.;]+$/, "");
+        const searchMatch = clean.match(/[?&]s=([^&]+)/);
+        if (searchMatch) {
+          return { url: clean, label: `Umut-Sen'de ara: ${decodeURIComponent(searchMatch[1])}` };
+        }
+        const slug = clean.replace(/\/+$/, "").split("/").pop() || clean;
+        const label = slug
+          .replace(/[-_]+/g, " ")
+          .trim()
+          .replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("tr-TR"));
+        return { url: clean, label: label || clean };
+      });
+    }
+
+    function pressLinksSection(row) {
+      const links = pressLinksFor(row);
+      if (!links.length) return "";
+      const items = links.map((link) => `
+        <a class="live-link press-link" href="${esc(link.url)}" target="_blank" rel="noopener">${esc(link.label)}</a>
+      `).join("");
+      return `
+        <section class="live-section" aria-label="İlgili haberler ve yazılar">
+          <h3>Haberler ve Yazılar</h3>
+          <div class="press-link-list">${items}</div>
+        </section>
+      `;
+    }
+
     function renderMediaTab(row) {
       return `
         <div class="live-grid media-flow">
+          ${pressLinksSection(row)}
           <section class="live-section" aria-label="Umut-Sen paylaşımları">
             <h3>Umut-Sen Paylaşımları</h3>
             <div id="socialEmbedX" class="social-embed"><div class="loading">Umut-Sen paylaşımları yükleniyor...</div></div>
