@@ -18,12 +18,20 @@
 //    Bu tam adresi Claude'a (bana) verin, kodun geri kalanına ben ekleyeceğim.
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const requestUrl = new URL(request.url);
 
     // Tarayıcının "preflight" (OPTIONS) isteğine izin ver.
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders() });
+    }
+
+    // Umut-Sen'in kendi Facebook Sayfası / Instagram İşletme hesabından
+    // paylaşımları çeker. Token/App Secret asla tarayıcıya çıkmaz — sadece
+    // bu worker içinde, Cloudflare'ın şifreli "Secret" ortam değişkenlerinden
+    // okunur (Settings > Variables and Secrets).
+    if (requestUrl.searchParams.has("social")) {
+      return handleSocial(requestUrl, env);
     }
 
     const target = requestUrl.searchParams.get("url");
@@ -67,4 +75,73 @@ function corsHeaders() {
     "Access-Control-Allow-Headers": "*",
     "Cache-Control": "public, max-age=120"
   };
+}
+
+// Uzun ömürlü (long-lived) token, worker'ın çalıştığı süre boyunca bellekte
+// tutulur; her istekte Meta'ya yeniden değişim (exchange) isteği atılmaz.
+let cachedToken = null;
+let cachedTokenExpiry = 0;
+
+async function getLongLivedToken(env) {
+  const now = Date.now();
+  if (cachedToken && now < cachedTokenExpiry) return cachedToken;
+  if (!env.FB_APP_ID || !env.FB_APP_SECRET || !env.FB_PAGE_TOKEN) return env.FB_PAGE_TOKEN || null;
+  try {
+    const exchangeUrl = `https://graph.facebook.com/v21.0/oauth/access_token` +
+      `?grant_type=fb_exchange_token&client_id=${encodeURIComponent(env.FB_APP_ID)}` +
+      `&client_secret=${encodeURIComponent(env.FB_APP_SECRET)}` +
+      `&fb_exchange_token=${encodeURIComponent(env.FB_PAGE_TOKEN)}`;
+    const response = await fetch(exchangeUrl);
+    const data = await response.json();
+    if (data.access_token) {
+      cachedToken = data.access_token;
+      const ttlMs = data.expires_in ? Math.max(data.expires_in - 3600, 3600) * 1000 : 50 * 24 * 60 * 60 * 1000;
+      cachedTokenExpiry = now + ttlMs;
+      return cachedToken;
+    }
+  } catch {}
+  return env.FB_PAGE_TOKEN;
+}
+
+async function handleSocial(requestUrl, env) {
+  const kind = requestUrl.searchParams.get("social");
+  const token = await getLongLivedToken(env);
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Token yapılandırılmamış." }), {
+      status: 500,
+      headers: { ...corsHeaders(), "Content-Type": "application/json" }
+    });
+  }
+
+  let apiUrl;
+  if (kind === "facebook") {
+    const pageId = requestUrl.searchParams.get("pageId");
+    if (!pageId) return new Response("pageId eksik.", { status: 400, headers: corsHeaders() });
+    apiUrl = `https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}/posts` +
+      `?fields=message,full_picture,permalink_url,created_time&limit=25&access_token=${encodeURIComponent(token)}`;
+  } else if (kind === "instagram") {
+    const igId = requestUrl.searchParams.get("igId");
+    if (!igId) return new Response("igId eksik.", { status: 400, headers: corsHeaders() });
+    apiUrl = `https://graph.facebook.com/v21.0/${encodeURIComponent(igId)}/media` +
+      `?fields=caption,media_url,thumbnail_url,permalink,timestamp,media_type&limit=25&access_token=${encodeURIComponent(token)}`;
+  } else {
+    return new Response("Bilinmeyen 'social' parametresi (facebook/instagram olmalı).", {
+      status: 400,
+      headers: corsHeaders()
+    });
+  }
+
+  try {
+    const upstream = await fetch(apiUrl, { cf: { cacheTtl: 300, cacheEverything: false } });
+    const body = await upstream.text();
+    return new Response(body, {
+      status: upstream.status,
+      headers: { ...corsHeaders(), "Content-Type": "application/json", "Cache-Control": "public, max-age=300" }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Sosyal medya isteği başarısız: " + error.message }), {
+      status: 502,
+      headers: { ...corsHeaders(), "Content-Type": "application/json" }
+    });
+  }
 }
