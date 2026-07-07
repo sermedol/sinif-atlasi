@@ -3779,7 +3779,7 @@
     let mediaFilterState = new Map();
     let liveRequestToken = 0;
     let pressImageRequestToken = 0;
-    let pressAutoplayTimer = null;
+    let pressAutoplayTimers = [];
     let mediaRefreshTimer = null;
     let mediaRefreshRowId = null;
     let mediaRefreshBusy = false;
@@ -4421,6 +4421,7 @@
       if (activeTab === "media") {
         hydrateSocialMedia(row);
         hydratePressLinkImages(row);
+        hydrateFacebookPosts(row);
       } else {
         stopPressAutoplay();
         if (activeTab === "summary" && els.detailPanel.classList.contains("open")) hydrateSummaryNews(row);
@@ -4881,16 +4882,16 @@
     }
 
     function stopPressAutoplay() {
-      if (pressAutoplayTimer) window.clearInterval(pressAutoplayTimer);
-      pressAutoplayTimer = null;
+      pressAutoplayTimers.forEach((timer) => window.clearInterval(timer));
+      pressAutoplayTimers = [];
     }
 
-    function startPressAutoplay(list) {
-      stopPressAutoplay();
+    function startPressAutoplayFor(list) {
       if (!list || list.children.length < 2) return;
-      pressAutoplayTimer = window.setInterval(() => {
+      const timer = window.setInterval(() => {
         if (!document.body.contains(list)) {
-          stopPressAutoplay();
+          window.clearInterval(timer);
+          pressAutoplayTimers = pressAutoplayTimers.filter((item) => item !== timer);
           return;
         }
         const first = list.firstElementChild;
@@ -4898,12 +4899,13 @@
         const atEnd = list.scrollLeft + list.clientWidth >= list.scrollWidth - 4;
         list.scrollLeft = atEnd ? 0 : list.scrollLeft + step;
       }, 4500);
+      pressAutoplayTimers.push(timer);
     }
 
     async function hydratePressLinkImages(row) {
       const list = document.getElementById("pressLinkList");
       if (!list) return;
-      startPressAutoplay(list);
+      startPressAutoplayFor(list);
       const links = pressLinksFor(row);
       if (!links.length) return;
       const token = ++pressImageRequestToken;
@@ -4932,10 +4934,86 @@
       }));
     }
 
+    const FB_PAGE_ID = "295219557224323";
+    let facebookFeedCache = null;
+    let facebookFeedFetchedAt = 0;
+    const FACEBOOK_FEED_TTL_MS = 10 * 60 * 1000;
+
+    async function fetchFacebookFeed() {
+      const now = Date.now();
+      if (facebookFeedCache && now - facebookFeedFetchedAt < FACEBOOK_FEED_TTL_MS) return facebookFeedCache;
+      try {
+        const response = await fetchWithTimeout(
+          `https://sinif-atlasi.feyzakayaalti.workers.dev/?social=facebook&pageId=${FB_PAGE_ID}`,
+          {}, 6000, { background: false }
+        );
+        if (!response.ok) return facebookFeedCache || [];
+        const data = await response.json();
+        facebookFeedCache = Array.isArray(data.data) ? data.data : [];
+        facebookFeedFetchedAt = now;
+        return facebookFeedCache;
+      } catch {
+        return facebookFeedCache || [];
+      }
+    }
+
+    // Umut-Sen'in kendi Facebook paylaşımlarından, bu direnişe GERÇEKTEN
+    // ilişkili olanları seçer. Haber taramasında zaten kanıtlanmış aynı
+    // katı eşleştirme mantığını (isRelatedText) kullanır — tek kelime
+    // örtüşmesi yetmez, spesifik kimlik (başlık/yer/aktör) + mücadele
+    // bağlamı birlikte gerekir (alakasız içerik sızıntısına karşı).
+    // Genel Facebook akışı, HER haber taramasının aksine belirli bir şirket
+    // için yapılan bir aramanın sonucu DEĞİL — tüm 47 kayda karşı test
+    // ediliyor. Bu yüzden isRelatedText() (arama sonucu bağlamı için
+    // tasarlanmış, daha gevşek) burada YETERSİZ kalıyor: gerçek testte 47
+    // kayıttan 43'ü yanlışlıkla eşleşti. Bunun yerine başlıktaki TÜM ayırt
+    // edici kelimelerin (genel ek kelimeler hariç) paylaşımda geçmesini
+    // şart koşan çok daha katı bir kural kullanılıyor.
+    const FB_TITLE_STOPWORDS = new Set(["birakma", "eylemi", "nobeti", "kampanyasi", "sozlesmesi", "olayi"]);
+    function facebookPostMatchesRow(post, row) {
+      if (!post.message || !post.full_picture) return false;
+      const text = norm(post.message);
+      const titleTerms = relationTokens(value(row, fields.title)).filter(
+        (term) => term.length > 3 && !FB_TITLE_STOPWORDS.has(term)
+      );
+      if (titleTerms.length < 2) return false;
+      const hits = titleTerms.filter((term) => text.includes(term));
+      return hits.length === titleTerms.length;
+    }
+
+    async function hydrateFacebookPosts(row) {
+      const section = document.getElementById("facebookSection");
+      const list = document.getElementById("fbPostList");
+      if (!section || !list) return;
+      const feed = await fetchFacebookFeed();
+      if (selectedCase()?.id !== row.id) return;
+      const matches = feed.filter((post) => facebookPostMatchesRow(post, row)).slice(0, 8);
+      if (!matches.length) {
+        section.hidden = true;
+        return;
+      }
+      list.innerHTML = matches.map((post) => {
+        const label = stripHtml(post.message || "").replace(/\s+/g, " ").trim();
+        const shortLabel = label.length > 140 ? label.slice(0, 140).trim() + "…" : label;
+        return `
+          <a class="press-link-card" href="${esc(post.permalink_url)}" target="_blank" rel="noopener">
+            <span class="press-link-thumb has-image"><img src="${esc(post.full_picture)}" alt="${esc(shortLabel)}" loading="lazy" /></span>
+            <span class="press-link-overlay"><span class="press-link-label">${esc(shortLabel)}</span></span>
+          </a>
+        `;
+      }).join("");
+      section.hidden = false;
+      startPressAutoplayFor(list);
+    }
+
     function renderMediaTab(row) {
       return `
         <div class="live-grid media-flow">
           ${pressLinksSection(row)}
+          <section class="live-section" id="facebookSection" aria-label="Umut-Sen Facebook paylaşımları" hidden>
+            <h3>Umut-Sen Facebook'ta</h3>
+            <div class="press-link-list" id="fbPostList"></div>
+          </section>
           <section class="live-section" aria-label="Umut-Sen paylaşımları">
             <h3>Umut-Sen Paylaşımları</h3>
             <div id="socialEmbedX" class="social-embed"><div class="loading">Umut-Sen paylaşımları yükleniyor...</div></div>
@@ -6891,6 +6969,7 @@
       if (row && activeTab === "media") {
         hydrateSocialMedia(row);
         hydratePressLinkImages(row);
+        hydrateFacebookPosts(row);
       }
       scheduleMediaWarmup(filteredCases(), { delay: 120, force: true });
     }
