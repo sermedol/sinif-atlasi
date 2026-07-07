@@ -4883,8 +4883,7 @@
           setThumbImage(thumb, link.image, link.label);
           const meta = await fetchYoutubeOEmbed(link.url);
           if (token !== pressImageRequestToken || !meta) return;
-          if (meta.title) setCardLabel(card, meta.title);
-          if (meta.thumbnail_url) setThumbImage(thumb, meta.thumbnail_url, meta.title || link.label);
+          if (meta.thumbnail_url) setThumbImage(thumb, meta.thumbnail_url, link.label);
           return;
         }
         if (link.isSearch) return;
