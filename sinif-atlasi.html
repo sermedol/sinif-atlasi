@@ -2655,15 +2655,6 @@
       font-size: 12px;
     }
 
-    .coord-value {
-      font-family: ui-monospace, "SF Mono", Consolas, monospace;
-      font-size: 12px;
-      color: var(--ink);
-      background: var(--soft);
-      padding: 2px 7px;
-      border-radius: 999px;
-    }
-
     .resistance-card {
       padding: 16px;
       background:
@@ -4168,8 +4159,12 @@
     function populateFilters() {
       const areas = Array.from(new Set(cases.map((row) => value(row, fields.area)).filter(Boolean))).sort((a, b) => a.localeCompare(b, "tr"));
       const statuses = Array.from(new Set(cases.map((row) => value(row, fields.status)).filter(Boolean))).sort((a, b) => a.localeCompare(b, "tr"));
+      const previousArea = els.areaFilter.value;
+      const previousStatus = els.statusFilter.value;
       els.areaFilter.innerHTML = '<option value="">Tüm alanlar</option>' + areas.map((area) => `<option value="${esc(area)}">${esc(area)}</option>`).join("");
       els.statusFilter.innerHTML = '<option value="">Tüm durumlar</option>' + statuses.map((status) => `<option value="${esc(status)}">${esc(status)}</option>`).join("");
+      if (areas.includes(previousArea)) els.areaFilter.value = previousArea;
+      if (statuses.includes(previousStatus)) els.statusFilter.value = previousStatus;
       filtersReady = true;
     }
 
@@ -4249,14 +4244,12 @@
       const locationText = value(row, fields.location);
       if (!locationText) return "";
       const points = pointsFor(row).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+      const showLabels = points.length > 1;
       const coordRows = points.map((point) => {
-        const coordText = `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
         const mapsUrl = `https://www.google.com/maps?q=${point.lat},${point.lng}`;
         return `
           <div class="coord-row">
-            <span class="coord-label">${esc(point.label || locationText)}</span>
-            <span class="coord-value">${esc(coordText)}</span>
-            <button class="inline-action" type="button" data-copy-coord="${esc(coordText)}">Koordinatı kopyala</button>
+            ${showLabels ? `<span class="coord-label">${esc(point.label || locationText)}</span>` : ""}
             <a class="inline-action" href="${esc(mapsUrl)}" target="_blank" rel="noopener">Haritada aç</a>
           </div>
         `;
@@ -4268,23 +4261,6 @@
           ${coordRows ? `<div class="coord-list">${coordRows}</div>` : ""}
         </div>
       `;
-    }
-
-    function wireCoordActions(root) {
-      if (!root) return;
-      root.querySelectorAll("[data-copy-coord]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const text = button.dataset.copyCoord;
-          const original = button.textContent;
-          try {
-            await navigator.clipboard.writeText(text);
-            button.textContent = "Kopyalandı";
-          } catch {
-            button.textContent = "Kopyalanamadı";
-          }
-          window.setTimeout(() => { button.textContent = original; }, 1400);
-        });
-      });
     }
 
     function selectedCase() {
@@ -4342,7 +4318,6 @@
       els.favoriteCase.classList.toggle("is-active", favoriteIds.has(row.id));
       els.detail.innerHTML = renderTab(row);
       wireMediaGallery(els.detail);
-      wireCoordActions(els.detail);
       if (activeTab === "media") {
         hydrateSocialMedia(row);
       } else {
