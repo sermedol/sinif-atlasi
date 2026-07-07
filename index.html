@@ -1205,6 +1205,7 @@
       overflow-x: auto;
       overflow-y: hidden;
       scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
       padding-bottom: 6px;
       -webkit-overflow-scrolling: touch;
     }
@@ -3778,6 +3779,7 @@
     let mediaFilterState = new Map();
     let liveRequestToken = 0;
     let pressImageRequestToken = 0;
+    let pressAutoplayTimer = null;
     let mediaRefreshTimer = null;
     let mediaRefreshRowId = null;
     let mediaRefreshBusy = false;
@@ -4420,6 +4422,7 @@
         hydrateSocialMedia(row);
         hydratePressLinkImages(row);
       } else {
+        stopPressAutoplay();
         if (activeTab === "summary" && els.detailPanel.classList.contains("open")) hydrateSummaryNews(row);
       }
     }
@@ -4877,9 +4880,30 @@
       if (label && text) label.textContent = text;
     }
 
+    function stopPressAutoplay() {
+      if (pressAutoplayTimer) window.clearInterval(pressAutoplayTimer);
+      pressAutoplayTimer = null;
+    }
+
+    function startPressAutoplay(list) {
+      stopPressAutoplay();
+      if (!list || list.children.length < 2) return;
+      pressAutoplayTimer = window.setInterval(() => {
+        if (!document.body.contains(list)) {
+          stopPressAutoplay();
+          return;
+        }
+        const first = list.firstElementChild;
+        const step = first.getBoundingClientRect().width + 10;
+        const atEnd = list.scrollLeft + list.clientWidth >= list.scrollWidth - 4;
+        list.scrollLeft = atEnd ? 0 : list.scrollLeft + step;
+      }, 4500);
+    }
+
     async function hydratePressLinkImages(row) {
       const list = document.getElementById("pressLinkList");
       if (!list) return;
+      startPressAutoplay(list);
       const links = pressLinksFor(row);
       if (!links.length) return;
       const token = ++pressImageRequestToken;
