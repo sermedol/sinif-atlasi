@@ -7094,7 +7094,11 @@
     configureRefresh();
     startMediaAutoRefresh();
     updateOnlineState();
-    useRows(FALLBACK_ROWS, "Yerel");
+    // Önce eski/yerel yedek veriyi gösterip sonra canlı veriyle değiştirmek
+    // "eski kayıtlar görünüp sonra yenileniyor" hissi veriyordu. Bunun yerine
+    // canlı tablo yanıtı gelene kadar kısa bir yükleniyor durumu gösterilir;
+    // ekrana yalnızca güncel veri (ya da tablo hiç ulaşılamazsa yedek veri) BİR KEZ çizilir.
+    els.caseList.innerHTML = '<div class="empty"><b>Yükleniyor…</b><span>Güncel direniş kayıtları getiriliyor.</span></div>';
     loadGoogleSheet()
       .then((rows) => useRows(rows, "Çevrimiçi"))
       .catch(() => useRows(FALLBACK_ROWS, "Yerel"));
