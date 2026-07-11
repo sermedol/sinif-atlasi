@@ -43,6 +43,15 @@ export default {
       return handleGeocode(requestUrl);
     }
 
+    // Google'ın kısa paylaşım linkleri (maps.app.goo.gl/... gibi) adres
+    // içermez — gerçek konumu görmek için yönlendirmeyi (redirect) takip
+    // etmek gerekir. Tarayıcı bunu CORS yüzünden okuyamaz; bu worker
+    // sunucu tarafında yönlendirmeyi takip edip son URL'deki koordinatı
+    // (…/@lat,lng,… veya …!3dlat!4dlng…) çıkarır.
+    if (requestUrl.searchParams.has("resolve")) {
+      return handleResolveLink(requestUrl);
+    }
+
     const target = requestUrl.searchParams.get("url");
     if (!target || !/^https?:\/\//i.test(target)) {
       return new Response("Eksik veya geçersiz 'url' parametresi.", {
@@ -230,6 +239,55 @@ async function handleGeocode(requestUrl) {
     });
   } catch (error) {
     return new Response(JSON.stringify({ error: "Geocode isteği başarısız: " + error.message }), {
+      status: 502,
+      headers: { ...corsHeaders(), "Content-Type": "application/json" }
+    });
+  }
+}
+
+async function handleResolveLink(requestUrl) {
+  const link = requestUrl.searchParams.get("resolve");
+  if (!link || !/^https?:\/\//i.test(link)) {
+    return new Response(JSON.stringify({ error: "Geçersiz link." }), {
+      status: 400,
+      headers: { ...corsHeaders(), "Content-Type": "application/json" }
+    });
+  }
+  try {
+    const upstream = await fetch(link, {
+      redirect: "follow",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+      },
+      // Kısa linkin hedefi neredeyse hiç değişmez — Cloudflare kenarında
+      // uzun süre önbelleğe alınır, aynı linke tekrar istek gitmez.
+      cf: { cacheTtl: 2592000, cacheEverything: true }
+    });
+    const finalUrl = upstream.url;
+    let lat = null;
+    let lng = null;
+    // "!3dENLEM!4dBOYLAM" işaretçinin kendi tam koordinatı, "@enlem,boylam"
+    // ise görünüm merkezi — ikisi de varsa işaretçininkini tercih et.
+    const pinMatch = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    const centerMatch = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (pinMatch) {
+      lat = Number(pinMatch[1]);
+      lng = Number(pinMatch[2]);
+    } else if (centerMatch) {
+      lat = Number(centerMatch[1]);
+      lng = Number(centerMatch[2]);
+    }
+    let label = null;
+    const placeMatch = finalUrl.match(/\/maps\/place\/([^/@]+)/);
+    if (placeMatch) {
+      try { label = decodeURIComponent(placeMatch[1].replace(/\+/g, " ")); } catch (e) {}
+    }
+    const result = (Number.isFinite(lat) && Number.isFinite(lng)) ? { lat, lng, label } : null;
+    return new Response(JSON.stringify({ result }), {
+      headers: { ...corsHeaders(), "Content-Type": "application/json", "Cache-Control": "public, max-age=2592000" }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Link çözümlenemedi: " + error.message }), {
       status: 502,
       headers: { ...corsHeaders(), "Content-Type": "application/json" }
     });

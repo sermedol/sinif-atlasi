@@ -4105,21 +4105,68 @@
       try { localStorage.setItem(GEOCODE_CACHE_KEY, JSON.stringify(geocodeCache)); } catch {}
     }
 
-    function konumTextFor(row) {
+    // Bazı satırlarda "Konum" hücresine BİRDEN FAZLA link/adres yan yana
+    // (boşlukla ayrılmış) yapıştırılıyor — örn. birden fazla şubesi/deposu
+    // olan bir direniş. Her "http" başlangıcı yeni bir girdi kabul edilir;
+    // link yoksa hücrenin tamamı tek bir girdidir.
+    function konumEntriesFor(row) {
       const keys = Object.keys(row).reduce((acc, key) => { acc[norm(key)] = key; return acc; }, {});
       const raw = String(row[keys.konum] || "").trim();
-      // "Konum" hücresine bazen düz adres yerine bir Google Haritalar arama
-      // linki yapıştırılıyor (…/maps/search/?api=1&query=... veya ...?q=...).
-      // Öyleyse linkin kendisini değil, sorgudaki gerçek adres/koordinat
-      // metnini kullan — yoksa ne regex ne de geocode hiçbir zaman eşleşmez.
-      if (/^https?:\/\//i.test(raw)) {
+      if (!raw) return [];
+      if (/https?:\/\//i.test(raw)) {
+        return raw.split(/(?=https?:\/\/)/i).map((s) => s.trim()).filter(Boolean);
+      }
+      return [raw];
+    }
+
+    function konumRawUrlsFor(row) {
+      return konumEntriesFor(row).filter((entry) => /^https?:\/\//i.test(entry));
+    }
+
+    // Bir "Konum" girdisi bir Google Haritalar arama linkiyse (…/maps/search/
+    // ?api=1&query=... veya ...?q=...), linkin kendisini değil, sorgudaki
+    // gerçek adres/koordinat metnini döndürür — yoksa ne regex ne de geocode
+    // hiçbir zaman eşleşmez.
+    function extractAddressFromEntry(entry) {
+      const text = String(entry || "").trim();
+      if (/^https?:\/\//i.test(text)) {
         try {
-          const url = new URL(raw);
+          const url = new URL(text);
           const q = url.searchParams.get("query") || url.searchParams.get("q");
           if (q) return q.trim();
         } catch (e) {}
       }
-      return raw;
+      return text;
+    }
+
+    function konumTextFor(row) {
+      return extractAddressFromEntry(konumEntriesFor(row)[0] || "");
+    }
+
+    // Bir metinde/linkte doğrudan gömülü koordinat varsa (Google'ın çözülmüş
+    // "…/@enlem,boylam,…" ya da "…!3denlem!4dboylam…" biçimi, ya da düz
+    // "enlem,boylam" metni) ağa hiç gitmeden anında ayrıştırır.
+    function parseCoordFromText(text) {
+      const s = String(text || "");
+      const pinMatch = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
+      if (pinMatch) {
+        const lat = Number(pinMatch[1]);
+        const lng = Number(pinMatch[2]);
+        if (isPlausibleCoord(lat, lng)) return { lat, lng };
+      }
+      const atMatch = s.match(/@(-?\d{1,3}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/);
+      if (atMatch) {
+        const lat = Number(atMatch[1]);
+        const lng = Number(atMatch[2]);
+        if (isPlausibleCoord(lat, lng)) return { lat, lng };
+      }
+      const plainMatch = s.match(/(-?\d{1,3}(?:[.,]\d+)?)\s*[,;]\s*(-?\d{1,3}(?:[.,]\d+)?)/);
+      if (plainMatch) {
+        const lat = Number(plainMatch[1].replace(",", "."));
+        const lng = Number(plainMatch[2].replace(",", "."));
+        if (isPlausibleCoord(lat, lng)) return { lat, lng };
+      }
+      return null;
     }
 
     const GEOCODE_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -4199,6 +4246,54 @@
       return geocodeCache[key];
     }
 
+    function isShortMapsLink(text) {
+      return /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(String(text || "").trim());
+    }
+
+    // Google'ın kısa paylaşım linkini (maps.app.goo.gl/... gibi) worker
+    // üzerinden çözer — worker yönlendirmeyi (redirect) takip edip son
+    // URL'deki koordinatı çıkarır (bkz. cloudflare-worker.js: handleResolveLink).
+    // Tarayıcı bunu CORS yüzünden doğrudan yapamaz.
+    async function resolveShortMapsLink(link) {
+      try {
+        const response = await fetchWithTimeout(
+          `https://sinif-atlasi.feyzakayaalti.workers.dev/?resolve=${encodeURIComponent(link)}`,
+          {}, 8000, { background: true }
+        );
+        const data = await response.json();
+        if (data && data.result && isPlausibleCoord(data.result.lat, data.result.lng)) {
+          return data.result;
+        }
+      } catch {}
+      return null;
+    }
+
+    // Tek bir "Konum" girdisini (link ya da düz metin) koordinata çevirir;
+    // sonuç girdinin kendi metnine göre önbelleğe alınır.
+    async function resolveKonumEntry(entry) {
+      const key = norm(entry);
+      if (isUsableGeocodeEntry(geocodeCache[key])) return geocodeCache[key];
+      const direct = parseCoordFromText(entry);
+      if (direct) {
+        geocodeCache[key] = direct;
+        saveGeocodeCache();
+        return direct;
+      }
+      let result = null;
+      if (isShortMapsLink(entry)) {
+        result = await resolveShortMapsLink(entry.trim());
+      } else {
+        const address = extractAddressFromEntry(entry);
+        if (address.length >= 4) {
+          const geocoded = await geocodeAddress(address);
+          if (geocoded && Number.isFinite(geocoded.lat) && Number.isFinite(geocoded.lng)) result = geocoded;
+        }
+      }
+      geocodeCache[key] = result || { failedAt: Date.now() };
+      saveGeocodeCache();
+      return geocodeCache[key];
+    }
+
     let geocodeQueueRunning = false;
     async function geocodeMissingAddressesInBackground() {
       if (geocodeQueueRunning) return;
@@ -4206,24 +4301,29 @@
       try {
         const seen = new Set();
         for (const row of cases) {
-          if (explicitPoint(row)) continue;
-          const address = konumTextFor(row);
-          if (address.length < 12) continue;
-          const key = norm(address);
-          if (seen.has(key) || isUsableGeocodeEntry(geocodeCache[key])) continue;
-          seen.add(key);
-          const result = await geocodeAddress(address);
-          if (result && isPlausibleCoord(result.lat, result.lng)) {
-            rebuildPoints();
-            render();
+          for (const entry of konumEntriesFor(row)) {
+            if (entry.length < 4) continue;
+            const key = norm(entry);
+            if (seen.has(key) || isUsableGeocodeEntry(geocodeCache[key]) || parseCoordFromText(entry)) continue;
+            seen.add(key);
+            const result = await resolveKonumEntry(entry);
+            if (result && isPlausibleCoord(result.lat, result.lng)) {
+              rebuildPoints();
+              render();
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 1100));
           }
-          await new Promise((resolve) => window.setTimeout(resolve, 1100));
         }
       } finally {
         geocodeQueueRunning = false;
       }
     }
 
+    // Her "Konum" girdisi (birden fazla olabilir — bkz. konumEntriesFor)
+    // için önbellekte veya metnin kendisinde hazır bir koordinat varsa onu
+    // döndürür. Henüz çözülmemiş girdiler atlanır (arka plan kuyruğu onları
+    // çözünce rebuildPoints/render ile harita kendiliğinden güncellenir) —
+    // bu sayede kısmen çözülmüş satırlar bile o ana kadar bulunanları gösterir.
     function explicitPoint(row) {
       const keys = Object.keys(row).reduce((acc, key) => {
         acc[norm(key)] = key;
@@ -4236,21 +4336,18 @@
         const lng = Number(String(row[lngKey]).replace(",", "."));
         if (isPlausibleCoord(lat, lng)) return [{ label: value(row, fields.location), lat, lng }];
       }
-      const konumText = konumTextFor(row);
-      const konumMatch = konumText.match(/(-?\d{1,3}(?:[.,]\d+)?)\s*[,;]\s*(-?\d{1,3}(?:[.,]\d+)?)/);
-      if (konumMatch) {
-        const lat = Number(konumMatch[1].replace(",", "."));
-        const lng = Number(konumMatch[2].replace(",", "."));
-        if (isPlausibleCoord(lat, lng)) return [{ label: value(row, fields.location), lat, lng }];
-      }
-      if (konumText) {
-        const cacheKey = norm(konumText);
-        const cached = geocodeCache[cacheKey];
+      const entries = konumEntriesFor(row);
+      if (!entries.length) return null;
+      const locationText = value(row, fields.location);
+      const resolved = [];
+      entries.forEach((entry, index) => {
+        const cached = parseCoordFromText(entry) || geocodeCache[norm(entry)];
         if (cached && isPlausibleCoord(cached.lat, cached.lng)) {
-          return [{ label: value(row, fields.location), lat: cached.lat, lng: cached.lng }];
+          const label = cached.label || (entries.length > 1 ? `${locationText} (${index + 1})` : locationText);
+          resolved.push({ label, lat: cached.lat, lng: cached.lng });
         }
-      }
-      return null;
+      });
+      return resolved.length ? resolved : null;
     }
 
     function fuzzyLocationPoints(locationText) {
@@ -4503,33 +4600,32 @@
       `;
     }
 
-    // "Konum" hücresine doğrudan bir Google Haritalar linki yapıştırılmışsa
-    // (…/maps/search/?api=1&query=... gibi), onu olduğu gibi döndürür —
-    // kullanıcının kendi seçtiği/paylaştığı link, bizim türettiğimiz
-    // koordinat veya arama linkinden önceliklidir.
-    function konumRawUrlFor(row) {
-      const keys = Object.keys(row).reduce((acc, key) => { acc[norm(key)] = key; return acc; }, {});
-      const raw = String(row[keys.konum] || "").trim();
-      return /^https?:\/\//i.test(raw) ? raw : null;
-    }
-
     // Konum metniyle birlikte, varsa haritadaki gerçek koordinatları da
     // gösterir ve paylaşılabilir hâle getirir (kopyala + haritada aç).
+    // Bir satırda birden fazla "Konum" linki olabilir (örn. birden çok
+    // şubesi/deposu olan bir direniş) — bu durumda her biri ayrı bir
+    // "Haritada aç" satırı olarak gösterilir.
     function locationSection(row) {
       const locationText = value(row, fields.location);
       if (!locationText) return "";
-      const directUrl = konumRawUrlFor(row);
+      const directUrls = konumRawUrlsFor(row);
       const points = pointsFor(row).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
-      const showLabels = points.length > 1;
+      const showLabels = points.length > 1 || directUrls.length > 1;
       let coordRows;
-      if (directUrl) {
-        // "Konum" sütunundaki gerçek Google Haritalar linki — yönlendirme
-        // doğrudan bu olmalı, koordinattan yeniden türetilmiş bir link değil.
-        coordRows = `
-          <div class="coord-row">
-            <a class="inline-action" href="${esc(directUrl)}" target="_blank" rel="noopener">Haritada aç</a>
-          </div>
-        `;
+      if (directUrls.length) {
+        // "Konum" sütunundaki gerçek Google Haritalar link(ler)i —
+        // yönlendirme doğrudan bu(nlar) olmalı, koordinattan yeniden
+        // türetilmiş bir link değil.
+        coordRows = directUrls.map((url, index) => {
+          const cached = geocodeCache[norm(url)];
+          const label = (cached && cached.label) || (directUrls.length > 1 ? `${locationText} (${index + 1})` : null);
+          return `
+            <div class="coord-row">
+              ${showLabels && label ? `<span class="coord-label">${esc(label)}</span>` : ""}
+              <a class="inline-action" href="${esc(url)}" target="_blank" rel="noopener">Haritada aç</a>
+            </div>
+          `;
+        }).join("");
       } else if (points.length) {
         coordRows = points.map((point) => {
           const mapsUrl = `https://www.google.com/maps?q=${point.lat},${point.lng}`;
