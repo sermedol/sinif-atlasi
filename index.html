@@ -4309,7 +4309,7 @@
             const result = await resolveKonumEntry(entry);
             if (result && isPlausibleCoord(result.lat, result.lng)) {
               rebuildPoints();
-              render();
+              render({ fitBounds: false });
             }
             await new Promise((resolve) => window.setTimeout(resolve, 1100));
           }
@@ -4575,7 +4575,11 @@
       syncSmartFilters();
     }
 
-    function render() {
+    // fitBounds=false: sadece marker'ları/listeyi yeniden çizer, haritanın
+    // mevcut yakınlaştırma/kaydırma durumuna dokunmaz. Arka planda veri
+    // güncellenirken (geocode kuyruğu, periyodik tablo yenileme) kullanıcı
+    // haritada gezinirken görünümün aniden sıfırlanmasını (zoom-out) önler.
+    function render(options = {}) {
       if (!filtersReady) populateFilters();
       const rows = filteredCases();
       const markers = renderMarkers();
@@ -4584,7 +4588,7 @@
       if (!selectedId && rows.length) selectedId = rows[0].id;
       renderDetail();
       scheduleMediaWarmup(rows);
-      if (HAS_LEAFLET && markers.length) {
+      if (HAS_LEAFLET && markers.length && options.fitBounds !== false) {
         const bounds = L.featureGroup(markers).getBounds();
         if (bounds.isValid()) map.fitBounds(bounds.pad(0.12), { maxZoom: 7 });
       }
@@ -6951,7 +6955,7 @@
       return !normalized.trim() || normalized.includes("service unavailable") || normalized.includes("access denied") || normalized.includes("captcha");
     }
 
-    function mergeRows(preserveSelection = true) {
+    function mergeRows(preserveSelection = true, options = {}) {
       const previousId = selectedId;
       cases = decorateRows(baseRows);
       rebuildPoints();
@@ -6962,7 +6966,7 @@
       } else if (!preserveSelection || !cases.some((row) => row.id === previousId)) {
         selectedId = cases[0]?.id || null;
       }
-      render();
+      render({ fitBounds: options.fitBounds });
       geocodeMissingAddressesInBackground();
     }
 
@@ -7064,9 +7068,9 @@
       if (bounds.isValid()) map.fitBounds(bounds.pad(0.16), { maxZoom: 8 });
     }
 
-    function useRows(rawRows, sourceLabel) {
+    function useRows(rawRows, sourceLabel, options = {}) {
       baseRows = rawRows;
-      mergeRows(false);
+      mergeRows(false, options);
     }
 
     function parseGvizResponse(response) {
@@ -7132,7 +7136,9 @@
       if (navigator.onLine === false) return;
       try {
         const rows = await loadGoogleSheet();
-        useRows(rows, "Çevrimiçi");
+        // Bu, sayfa zaten açıkken periyodik/arka plan yenilemesidir —
+        // kullanıcı haritada gezinirken görünümü sıfırlamamalı.
+        useRows(rows, "Çevrimiçi", { fitBounds: false });
       } catch {
         // Çevrimiçi tabloya ulaşılamadı; yerel kayıtlar korunur.
       }
