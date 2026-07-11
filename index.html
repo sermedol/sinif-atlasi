@@ -8,7 +8,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css'">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css'">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css'">
   <style>
     :root {
       --page: #f3f0ea;
@@ -1893,39 +1895,14 @@
     .pin-dunya { background: var(--blue); }
     .pin-karma { background: var(--amber); }
 
-    .cluster-bubble {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 34px;
-      height: 34px;
-      border-radius: 999px;
-      background: var(--accent);
-      color: #fff;
-      font-family: var(--font-display);
-      font-weight: 700;
-      font-size: 12.5px;
-      border: 3px solid #fff;
-      box-shadow: 0 6px 16px rgba(20, 20, 20, 0.28);
-      cursor: pointer;
+    .leaflet-popup-content-wrapper {
+      border-radius: 8px;
     }
 
-    .cluster-bubble.cluster-md {
-      width: 42px;
-      height: 42px;
-      font-size: 14px;
-    }
-
-    .cluster-bubble.cluster-lg {
-      width: 50px;
-      height: 50px;
-      font-size: 15.5px;
-    }
-
-    .maplibregl-popup-content {
+    .leaflet-popup-content {
       border-radius: 8px;
       width: min(340px, 72vw) !important;
-      padding: 13px !important;
+      margin: 13px;
     }
 
     .popup-mini {
@@ -2525,11 +2502,11 @@
       background: #dbe7f1;
     }
 
-    #map .maplibregl-canvas {
+    #map .leaflet-tile {
       filter: saturate(0.92) contrast(0.98);
     }
 
-    html[data-theme="dark"] #map .maplibregl-canvas {
+    html[data-theme="dark"] #map .leaflet-tile {
       filter: brightness(0.62) contrast(1.05) saturate(0.72);
     }
 
@@ -2835,7 +2812,7 @@
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.34);
     }
 
-    .maplibregl-popup-content {
+    .leaflet-popup-content-wrapper {
       border-radius: 18px;
       box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
     }
@@ -3469,25 +3446,36 @@
   </div>
 
   <script>
-    // MapLibre GL JS + Supercluster'ı çok sayıda CDN'den sırayla dene. Biri
-    // erişilebilir olana kadar geç; hepsi başarısızsa uygulama haritasız
-    // (veri korunur) devam eder. Türkiye'den erişimi farklı olabilen
-    // sağlayıcılar dahil edildi. (Leaflet yerine: kendi markası/atıf
-    // zorunluluğu olmayan, aynı OSM tile verisini kullanan bir alternatif.)
-    window.__mapReady = (function () {
-      var MAPLIBRE_CDNS = [
-        "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js",
-        "https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.js",
-        "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+    // Leaflet + MarkerCluster'ı çok sayıda CDN'den sırayla dene. Biri erişilebilir
+    // olana kadar geç; hepsi başarısızsa uygulama haritasız (veri korunur) devam eder.
+    // Türkiye'den erişimi farklı olabilen sağlayıcılar dahil edildi.
+    window.__leafletReady = (function () {
+      var LEAFLET_CDNS = [
+        "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js",
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js",
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+        "https://cdn.statically.io/gh/Leaflet/Leaflet/v1.9.4/dist/leaflet.js",
+        "https://esm.sh/leaflet@1.9.4/dist/leaflet.js"
       ];
-      var MAPLIBRE_CSS = [
-        "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css",
-        "https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.css",
-        "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+      var LEAFLET_CSS = [
+        "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css",
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css",
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       ];
-      var SUPERCLUSTER_CDNS = [
-        "https://cdn.jsdelivr.net/npm/supercluster@8.0.1/dist/supercluster.min.js",
-        "https://unpkg.com/supercluster@8.0.1/dist/supercluster.min.js"
+      var CLUSTER_JS = [
+        "https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js",
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js",
+        "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
+      ];
+      var CLUSTER_CSS = [
+        "https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css",
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css",
+        "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+      ];
+      var CLUSTER_CSS_D = [
+        "https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css",
+        "https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css",
+        "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
       ];
 
       function loadCssFirst(urls) {
@@ -3522,14 +3510,16 @@
         });
       }
 
-      loadCssFirst(MAPLIBRE_CSS);
+      loadCssFirst(LEAFLET_CSS);
+      loadCssFirst(CLUSTER_CSS);
+      loadCssFirst(CLUSTER_CSS_D);
 
-      return loadScriptChain(MAPLIBRE_CDNS, function () {
-        return typeof maplibregl !== "undefined" && maplibregl && typeof maplibregl.Map === "function";
+      return loadScriptChain(LEAFLET_CDNS, function () {
+        return typeof L !== "undefined" && L && typeof L.map === "function";
       }).then(function (ok) {
         if (!ok) return false;
-        return loadScriptChain(SUPERCLUSTER_CDNS, function () {
-          return typeof Supercluster !== "undefined" && typeof Supercluster === "function";
+        return loadScriptChain(CLUSTER_JS, function () {
+          return typeof L !== "undefined" && L && typeof L.markerClusterGroup === "function";
         });
       });
     })();
@@ -3690,51 +3680,52 @@
       statFilters: Array.from(document.querySelectorAll("[data-stat-filter]"))
     };
 
-    // MapLibre yüklenemediyse (CDN engeli/kesinti) uygulama harita OLMADAN da
+    // Leaflet yüklenemediyse (CDN engeli/kesinti) uygulama harita OLMADAN da
     // çalışsın: veri listesi, istatistikler, detay ve keşif kaybolmasın.
-    // Harita, MapLibre asenkron yüklendiği için başta "sahte" (no-op) kurulur —
-    // böylece veri (liste, istatistik, detay) haritayı beklemeden anında görünür.
-    // MapLibre gelirse aşağıda gerçek haritaya yükseltilir; hiç gelmezse mesaj kalır.
-    let HAS_MAP = false;
-    let map, superclusterIndex = null, mapMarkerEls = [];
+    // Harita, Leaflet asenkron yüklendiği için başta "sahte" (no-op) kurulur —
+    // böylece veri (liste, istatistik, detay) Leaflet'i beklemeden anında görünür.
+    // Leaflet gelirse aşağıda gerçek haritaya yükseltilir; hiç gelmezse mesaj kalır.
+    let HAS_LEAFLET = false;
+    let map, markerLayer;
     function installStubMap() {
-      const noop = function () { return map; };
+      const noop = function () { return noopLayer; };
+      const noopLayer = { addLayers: noop, clearLayers: noop, addLayer: noop, addTo: noop, removeLayer: noop };
       map = {
-        addLayer: noop, removeLayer: noop, on: noop, off: noop, once: noop,
-        fitBounds: noop, setMaxBounds: noop, resize: noop,
-        getZoom: function () { return 5; }, flyTo: noop, setZoom: noop, getBounds: function () { return null; }
+        setView: function () { return map; }, addLayer: noop, removeLayer: noop,
+        on: noop, off: noop, fitBounds: noop, setMaxBounds: noop,
+        invalidateSize: noop, getZoom: function () { return 5; }, flyTo: noop, setZoom: noop
       };
+      markerLayer = noopLayer;
     }
     installStubMap();
 
     // Çoklu tile kaynağı: biri erişilemezse (ör. OSM engelli) diğerine geç.
     const TILE_SOURCES = [
-      { tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png", "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"], attr: "© OpenStreetMap" },
-      { tiles: ["https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"], attr: "© OpenStreetMap, © CARTO" },
-      { tiles: ["https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png"], attr: "© OpenStreetMap, Wikimedia" }
+      { url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", sub: "abc", attr: '&copy; OpenStreetMap' },
+      { url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png", sub: "abcd", attr: '&copy; OpenStreetMap, &copy; CARTO' },
+      { url: "https://maps.wikimedia.org/osm-intl/{z}/{x}/{y}.png", sub: "", attr: '&copy; OpenStreetMap, Wikimedia' }
     ];
-    const TILE_SOURCE_ID = "base-tiles";
-    const TILE_LAYER_ID = "base-tiles-layer";
     function addResilientTiles(mapObj) {
       // İlk kaynağı ekle; tile hataları çok olursa sıradaki kaynağa geç.
       let idx = 0;
-      let errCount = 0;
+      let layer = null;
       function place() {
         const src = TILE_SOURCES[idx];
-        if (mapObj.getLayer(TILE_LAYER_ID)) mapObj.removeLayer(TILE_LAYER_ID);
-        if (mapObj.getSource(TILE_SOURCE_ID)) mapObj.removeSource(TILE_SOURCE_ID);
-        mapObj.addSource(TILE_SOURCE_ID, { type: "raster", tiles: src.tiles, tileSize: 256, attribution: src.attr, maxzoom: 19 });
-        mapObj.addLayer({ id: TILE_LAYER_ID, type: "raster", source: TILE_SOURCE_ID });
-        errCount = 0;
+        const opts = { maxZoom: 19, attribution: src.attr };
+        if (src.sub) opts.subdomains = src.sub;
+        layer = L.tileLayer(src.url, opts);
+        let errCount = 0;
+        layer.on("tileerror", function () {
+          errCount += 1;
+          // Bu kaynaktan çok tile başarısızsa (erişim engeli) sıradakine geç.
+          if (errCount === 6 && idx < TILE_SOURCES.length - 1) {
+            idx += 1;
+            mapObj.removeLayer(layer);
+            place();
+          }
+        });
+        layer.addTo(mapObj);
       }
-      mapObj.on("error", function (e) {
-        if (!e || !e.sourceId || e.sourceId !== TILE_SOURCE_ID) return;
-        errCount += 1;
-        if (errCount >= 6 && idx < TILE_SOURCES.length - 1) {
-          idx += 1;
-          place();
-        }
-      });
       place();
     }
 
@@ -3745,43 +3736,41 @@
       }
     }
 
-    // MapLibre hazır olunca gerçek haritayı kur ve yeniden çiz.
+    // Leaflet hazır olunca gerçek haritayı kur ve yeniden çiz.
     function upgradeToRealMap() {
-      if (HAS_MAP) return;
-      if (!(typeof maplibregl !== "undefined" && maplibregl && typeof maplibregl.Map === "function")) { showMapUnavailable(); return; }
-      HAS_MAP = true;
+      if (HAS_LEAFLET) return;
+      if (!(typeof L !== "undefined" && L && typeof L.map === "function")) { showMapUnavailable(); return; }
+      HAS_LEAFLET = true;
       const mapEl = document.getElementById("map");
       if (mapEl) mapEl.innerHTML = "";
       // Harita şimdilik yalnızca Türkiye sınırları içinde çalışır — dünya
       // görünümüne kaydırma/yakınlaştırma engellenir.
-      map = new maplibregl.Map({
-        container: "map",
-        style: { version: 8, sources: {}, layers: [], glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf" },
-        center: [35, 39],
-        zoom: 6,
+      map = L.map("map", {
+        zoomControl: true,
+        worldCopyJump: false,
+        maxBounds: [[33, 20], [45, 48]],
+        maxBoundsViscosity: 1,
         minZoom: 5,
-        maxZoom: 19,
-        maxBounds: [[20, 33], [48, 45]],
-        attributionControl: { compact: false }
-      });
-      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
-      map.on("load", function () {
-        addResilientTiles(map);
-        map.on("moveend", renderMapMarkers);
-        map.on("zoomend", renderMapMarkers);
-        // Veriler zaten yüklendiyse marker'ları çiz ve görünümü sığdır.
-        try { if (typeof render === "function" && cases && cases.length) { render(); } } catch (e) {}
-      });
+        attributionControl: false
+      }).setView([39, 35], 6);
+      L.control.attribution({ prefix: false }).addTo(map);
+      addResilientTiles(map);
+      markerLayer = (typeof L.markerClusterGroup === "function")
+        ? L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 44 })
+        : L.layerGroup();
+      map.addLayer(markerLayer);
+      // Veriler zaten yüklendiyse marker'ları çiz ve görünümü sığdır.
+      try { if (typeof render === "function" && cases && cases.length) { render(); } } catch (e) {}
     }
 
-    if (window.__mapReady && typeof window.__mapReady.then === "function") {
-      window.__mapReady.then(function (ok) {
+    if (window.__leafletReady && typeof window.__leafletReady.then === "function") {
+      window.__leafletReady.then(function (ok) {
         if (ok) { upgradeToRealMap(); } else { showMapUnavailable(); }
       });
     } else {
       // Yükleyici yoksa (beklenmedik) yine de dene.
       setTimeout(function () {
-        if (typeof maplibregl !== "undefined" && maplibregl && typeof maplibregl.Map === "function") upgradeToRealMap();
+        if (typeof L !== "undefined" && L && typeof L.map === "function") upgradeToRealMap();
         else showMapUnavailable();
       }, 3000);
     }
@@ -4017,7 +4006,7 @@
     function applyFocusMode(enabled) {
       preferences.focusMode = Boolean(enabled);
       document.documentElement.dataset.focus = preferences.focusMode ? "map" : "standard";
-      window.setTimeout(() => map.resize(), 220);
+      window.setTimeout(() => map.invalidateSize(), 220);
       savePreferences();
     }
 
@@ -4298,6 +4287,16 @@
       points = cases.flatMap((row) => pointsFor(row).map((point, index) => ({ id: `${row.id}-p${index}`, row, point })));
     }
 
+    function iconFor(row) {
+      return L.divIcon({
+        className: "",
+        html: `<span class="pin pin-${row.category}" aria-hidden="true"></span>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 30],
+        popupAnchor: [0, -29]
+      });
+    }
+
     function popupFor(entry) {
       return `
         <article class="popup-mini">
@@ -4312,62 +4311,18 @@
       `;
     }
 
-    function clearMapMarkers() {
-      mapMarkerEls.forEach((m) => m.remove());
-      mapMarkerEls = [];
-    }
-
-    // Supercluster'ın ürettiği kümeleri/tekil noktaları geçerli görünüme göre
-    // DOM marker'ları olarak çizer. Harita kaydırıldıkça/yakınlaştırıldıkça
-    // (moveend/zoomend) yeniden çağrılır.
-    function renderMapMarkers() {
-      if (!HAS_MAP || !superclusterIndex || !map.getBounds) return;
-      clearMapMarkers();
-      const bounds = map.getBounds();
-      if (!bounds) return;
-      const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
-      const zoom = Math.max(0, Math.min(20, Math.floor(map.getZoom())));
-      let clusters;
-      try { clusters = superclusterIndex.getClusters(bbox, zoom); } catch (e) { return; }
-      clusters.forEach((feature) => {
-        const [lng, lat] = feature.geometry.coordinates;
-        if (feature.properties.cluster) {
-          const count = feature.properties.point_count;
-          const el = document.createElement("div");
-          el.className = "cluster-bubble" + (count >= 20 ? " cluster-lg" : count >= 8 ? " cluster-md" : "");
-          el.textContent = String(count);
-          el.addEventListener("click", () => {
-            let expansionZoom = zoom + 2;
-            try { expansionZoom = superclusterIndex.getClusterExpansionZoom(feature.properties.cluster_id); } catch (e) {}
-            map.flyTo({ center: [lng, lat], zoom: Math.min(expansionZoom, 19) });
-          });
-          const marker = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
-          mapMarkerEls.push(marker);
-        } else {
-          const entry = feature.properties.entry;
-          // MapLibre, marker'ın KÖK elemanına konumlandırma transform'unu
-          // inline stille uygular — bu, .pin sınıfının kendi
-          // transform:rotate(-45deg) ile oluşturduğu damla şeklini ezer.
-          // Bu yüzden .pin'i, MapLibre'nin konumlandırdığı nötr bir dış
-          // kapsayıcının İÇİNE koyuyoruz; dönüş şekli böylece korunur.
-          const wrap = document.createElement("div");
-          const el = document.createElement("span");
-          el.className = `pin pin-${entry.row.category}`;
-          el.setAttribute("aria-hidden", "true");
-          wrap.appendChild(el);
-          const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "260px", offset: 18 }).setHTML(popupFor(entry));
-          popup.on("open", () => {
-            const button = document.querySelector(`[data-open-case="${entry.row.id}"]`);
-            if (button) button.addEventListener("click", () => selectCase(entry.row.id, { focusMap: false }));
-          });
-          const marker = new maplibregl.Marker({ element: wrap, anchor: "bottom" })
-            .setLngLat([lng, lat])
-            .setPopup(popup)
-            .addTo(map);
-          mapMarkerEls.push(marker);
-          marker.__entryId = entry.id;
-        }
+    function buildMarker(entry) {
+      const marker = L.marker([entry.point.lat, entry.point.lng], {
+        icon: iconFor(entry.row),
+        title: value(entry.row, fields.title)
+      }).bindPopup(popupFor(entry));
+      marker.on("popupopen", () => {
+        const button = document.querySelector(`[data-open-case="${entry.row.id}"]`);
+        if (button) button.addEventListener("click", () => selectCase(entry.row.id, { focusMap: false }));
       });
+      if (!markerByCase.has(entry.row.id)) markerByCase.set(entry.row.id, []);
+      markerByCase.get(entry.row.id).push(marker);
+      return marker;
     }
 
     function smartFilterMatches(row) {
@@ -4401,37 +4356,13 @@
       return points.filter((entry) => visibleIds.has(entry.row.id));
     }
 
-    function computeBoundsFor(pointsList) {
-      if (!pointsList.length) return null;
-      let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-      pointsList.forEach((entry) => {
-        minLat = Math.min(minLat, entry.point.lat);
-        maxLat = Math.max(maxLat, entry.point.lat);
-        minLng = Math.min(minLng, entry.point.lng);
-        maxLng = Math.max(maxLng, entry.point.lng);
-      });
-      return [[minLng, minLat], [maxLng, maxLat]];
-    }
-
     function renderMarkers() {
-      if (!HAS_MAP) return [];
-      const pts = filteredPoints();
-      // markerByCase, o an ekranda görünmese (kümelenmiş olsa) bile TÜM
-      // filtrelenmiş noktaları tutar — "Detaylar"a tıklanınca haritada
-      // gösterme (revealPointOnMap) bu listeye bakarak doğru noktayı bulur.
+      if (!HAS_LEAFLET) return [];
+      markerLayer.clearLayers();
       markerByCase = new Map();
-      pts.forEach((entry) => {
-        if (!markerByCase.has(entry.row.id)) markerByCase.set(entry.row.id, []);
-        markerByCase.get(entry.row.id).push(entry);
-      });
-      superclusterIndex = new Supercluster({ radius: 44, maxZoom: 17 });
-      superclusterIndex.load(pts.map((entry) => ({
-        type: "Feature",
-        properties: { entry },
-        geometry: { type: "Point", coordinates: [entry.point.lng, entry.point.lat] }
-      })));
-      renderMapMarkers();
-      return pts;
+      const markers = filteredPoints().map(buildMarker);
+      if (markers.length) markerLayer.addLayers(markers);
+      return markers;
     }
 
     function renderList(rows) {
@@ -4526,9 +4457,9 @@
       if (!selectedId && rows.length) selectedId = rows[0].id;
       renderDetail();
       scheduleMediaWarmup(rows);
-      if (HAS_MAP && markers.length) {
-        const bounds = computeBoundsFor(markers);
-        if (bounds) map.fitBounds(bounds, { padding: 60, maxZoom: 7 });
+      if (HAS_LEAFLET && markers.length) {
+        const bounds = L.featureGroup(markers).getBounds();
+        if (bounds.isValid()) map.fitBounds(bounds.pad(0.12), { maxZoom: 7 });
       }
     }
 
@@ -4599,31 +4530,6 @@
       });
     }
 
-    // Bir nokta o an bir kümenin içinde gizliyse, Supercluster'dan o noktanın
-    // tekil (kümesiz) görüneceği yakınlaştırma seviyesini bulup oraya uçar,
-    // sonra marker'ları yeniden çizip popup'ı açar.
-    function revealPointOnMap(entry) {
-      if (!HAS_MAP || !superclusterIndex) return;
-      const lng = entry.point.lng, lat = entry.point.lat;
-      const eps = 0.0005;
-      let targetZoom = Math.max(5, Math.floor(map.getZoom()));
-      for (let z = targetZoom; z <= 19; z++) {
-        let testClusters;
-        try { testClusters = superclusterIndex.getClusters([lng - eps, lat - eps, lng + eps, lat + eps], z); } catch (e) { break; }
-        const isIndividual = testClusters.some((f) => !f.properties.cluster && f.properties.entry.id === entry.id);
-        if (isIndividual) { targetZoom = z; break; }
-        targetZoom = Math.min(z + 1, 19);
-      }
-      map.flyTo({ center: [lng, lat], zoom: Math.max(targetZoom, map.getZoom()), duration: 450 });
-      map.once("moveend", () => {
-        renderMapMarkers();
-        window.setTimeout(() => {
-          const marker = mapMarkerEls.find((m) => m.__entryId === entry.id);
-          if (marker) marker.togglePopup();
-        }, 60);
-      });
-    }
-
     function selectCase(id, options = {}) {
       selectedId = id;
       if (!options.keepTab) activeTab = "summary";
@@ -4633,9 +4539,15 @@
       renderDetail();
       scheduleMediaWarmup([selectedCase(), ...filteredCases()], { delay: 0 });
       if (options.focusMap === false) return;
-      const entries = markerByCase.get(id) || [];
-      if (!entries.length) return;
-      revealPointOnMap(entries[0]);
+      const markers = markerByCase.get(id) || [];
+      if (!markers.length) return;
+      const marker = markers[0];
+      const reveal = () => {
+        map.panTo(marker.getLatLng(), { animate: true, duration: 0.45 });
+        window.setTimeout(() => marker.openPopup(), 220);
+      };
+      if (typeof markerLayer.zoomToShowLayer === "function") markerLayer.zoomToShowLayer(marker, reveal);
+      else reveal();
     }
 
     function renderDetail() {
@@ -6999,9 +6911,12 @@
     }
 
     function fitFiltered() {
-      if (!HAS_MAP) return;
-      const bounds = computeBoundsFor(filteredPoints());
-      if (bounds) map.fitBounds(bounds, { padding: 80, maxZoom: 8 });
+      if (!HAS_LEAFLET) return;
+      const markers = [];
+      markerByCase.forEach((items) => markers.push(...items));
+      if (!markers.length) return;
+      const bounds = L.featureGroup(markers).getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds.pad(0.16), { maxZoom: 8 });
     }
 
     function useRows(rawRows, sourceLabel) {
@@ -7096,7 +7011,7 @@
     });
     [els.areaFilter, els.statusFilter].forEach((el) => el.addEventListener("change", render));
     els.fitFiltered.addEventListener("click", fitFiltered);
-    els.focusTurkey.addEventListener("click", () => map.fitBounds([[25.4, 35.7], [45.0, 42.2]]));
+    els.focusTurkey.addEventListener("click", () => map.fitBounds([[35.7, 25.4], [42.2, 45.0]]));
     els.closePanel.addEventListener("click", () => setPanelOpen(false));
     els.smartFilters.forEach((button) => {
       button.addEventListener("click", () => setSmartFilter(
