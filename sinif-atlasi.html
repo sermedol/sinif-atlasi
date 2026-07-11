@@ -1146,7 +1146,7 @@
 
     .live-actions {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
       gap: 8px;
     }
 
@@ -4425,7 +4425,6 @@
       wireMediaGallery(els.detail);
       if (activeTab === "media") {
         hydratePressLinkImages(row);
-        hydrateSocialPosts(row);
       } else {
         stopPressAutoplay();
         if (activeTab === "summary" && els.detailPanel.classList.contains("open")) hydrateSummaryNews(row);
@@ -4938,53 +4937,6 @@
       }));
     }
 
-    const FB_PAGE_ID = "295219557224323";
-    let facebookFeedCache = null;
-    let facebookFeedFetchedAt = 0;
-    const FACEBOOK_FEED_TTL_MS = 10 * 60 * 1000;
-
-    async function fetchFacebookFeed() {
-      const now = Date.now();
-      if (facebookFeedCache && now - facebookFeedFetchedAt < FACEBOOK_FEED_TTL_MS) return facebookFeedCache;
-      try {
-        const response = await fetchWithTimeout(
-          `https://sinif-atlasi.feyzakayaalti.workers.dev/?social=facebook&pageId=${FB_PAGE_ID}`,
-          {}, 6000, { background: false }
-        );
-        if (!response.ok) return facebookFeedCache || [];
-        const data = await response.json();
-        facebookFeedCache = Array.isArray(data.data) ? data.data : [];
-        facebookFeedFetchedAt = now;
-        return facebookFeedCache;
-      } catch {
-        return facebookFeedCache || [];
-      }
-    }
-
-    // Umut-Sen'in kendi Facebook paylaşımlarından, bu direnişe GERÇEKTEN
-    // ilişkili olanları seçer. Haber taramasında zaten kanıtlanmış aynı
-    // katı eşleştirme mantığını (isRelatedText) kullanır — tek kelime
-    // örtüşmesi yetmez, spesifik kimlik (başlık/yer/aktör) + mücadele
-    // bağlamı birlikte gerekir (alakasız içerik sızıntısına karşı).
-    // Genel Facebook akışı, HER haber taramasının aksine belirli bir şirket
-    // için yapılan bir aramanın sonucu DEĞİL — tüm 47 kayda karşı test
-    // ediliyor. Bu yüzden isRelatedText() (arama sonucu bağlamı için
-    // tasarlanmış, daha gevşek) burada YETERSİZ kalıyor: gerçek testte 47
-    // kayıttan 43'ü yanlışlıkla eşleşti. Bunun yerine başlıktaki TÜM ayırt
-    // edici kelimelerin (genel ek kelimeler hariç) paylaşımda geçmesini
-    // şart koşan çok daha katı bir kural kullanılıyor.
-    const FB_TITLE_STOPWORDS = new Set(["birakma", "eylemi", "nobeti", "kampanyasi", "sozlesmesi", "olayi"]);
-    function facebookPostMatchesRow(post, row) {
-      if (!post.message || !post.full_picture) return false;
-      const text = norm(post.message);
-      const titleTerms = relationTokens(value(row, fields.title)).filter(
-        (term) => term.length > 3 && !FB_TITLE_STOPWORDS.has(term)
-      );
-      if (titleTerms.length < 2) return false;
-      const hits = titleTerms.filter((term) => text.includes(term));
-      return hits.length === titleTerms.length;
-    }
-
     // Bu direnişe özgü arama terimi: @umutsendikasi_ hesabından bu başlık/
     // konuyla ilgili paylaşımları arar (X'te ara linkinin sorgusu için).
     function umutSenSearchQuery(row) {
@@ -4996,46 +4948,24 @@
       return [title, place].filter(Boolean).join(" ");
     }
 
-    // Umut-Sen'in Facebook (ve eklendikçe Instagram/X) paylaşımlarından bu
-    // direnişle GERÇEKTEN ilişkili olanları tek bir ızgarada birleştirir.
-    async function hydrateSocialPosts(row) {
-      const section = document.getElementById("socialSection");
-      const grid = document.getElementById("socialPostGrid");
-      if (!section || !grid) return;
-      const feed = await fetchFacebookFeed();
-      if (selectedCase()?.id !== row.id) return;
-      const matches = feed.filter((post) => facebookPostMatchesRow(post, row)).slice(0, 8);
-      if (!matches.length) {
-        section.hidden = true;
-        return;
-      }
-      grid.innerHTML = matches.map((post) => {
-        const label = stripHtml(post.message || "").replace(/\s+/g, " ").trim();
-        const shortLabel = label.length > 140 ? label.slice(0, 140).trim() + "…" : label;
-        return `
-          <a class="press-link-card" href="${esc(post.permalink_url)}" target="_blank" rel="noopener">
-            <span class="press-link-thumb has-image"><img src="${esc(post.full_picture)}" alt="${esc(shortLabel)}" loading="lazy" /></span>
-            <span class="press-link-overlay"><span class="press-link-label">${esc(shortLabel)}</span></span>
-          </a>
-        `;
-      }).join("");
-      section.hidden = false;
-    }
-
+    // Umut-Sen'in sosyal medya hesaplarının API'lerini otomatik akış için
+    // kullanmak güvenilir olmadı (X: ücretsiz erişim yok, Facebook: token
+    // sürekli sorunlu). Bunun yerine hesaplara doğrudan, hep çalışan linkler
+    // veriliyor — kullanıcı bir tık uzakta gerçek hesaba ulaşır.
     function renderMediaTab(row) {
       const query = umutSenSearchQuery(row);
       const xSearchUrl = `https://twitter.com/search?q=${encodeURIComponent(`from:umutsendikasi_ ${query}`.trim())}`;
       return `
         <div class="live-grid media-flow">
           ${pressLinksSection(row)}
-          <section class="live-section" id="socialSection" aria-label="Umut-Sen paylaşımları" hidden>
+          <section class="live-section" aria-label="Umut-Sen paylaşımları">
             <h3>Umut-Sen Paylaşımları</h3>
-            <div class="press-grid" id="socialPostGrid"></div>
+            <div class="live-actions">
+              <a class="live-link" href="https://www.facebook.com/295219557224323" target="_blank" rel="noopener">Facebook'ta Umut-Sen</a>
+              <a class="live-link" href="${esc(xSearchUrl)}" target="_blank" rel="noopener">X'te ara</a>
+              <a class="live-link" href="https://www.instagram.com/umut_sendikasi" target="_blank" rel="noopener">Instagram'da Umut-Sen</a>
+            </div>
           </section>
-          <div class="live-actions">
-            <a class="live-link" href="${esc(xSearchUrl)}" target="_blank" rel="noopener">X'te ara</a>
-            <a class="live-link" href="https://www.instagram.com/umut_sendikasi" target="_blank" rel="noopener">Instagram'da Umut-Sen</a>
-          </div>
         </div>
       `;
     }
@@ -6916,7 +6846,6 @@
       const row = selectedCase();
       if (row && activeTab === "media") {
         hydratePressLinkImages(row);
-        hydrateSocialPosts(row);
       }
       scheduleMediaWarmup(filteredCases(), { delay: 120, force: true });
     }
