@@ -3392,6 +3392,17 @@
       .hud-button { min-height: 44px; padding-top: 11px; padding-bottom: 11px; }
       .discovery-open { min-height: 40px; }
       .tab { min-height: 44px; }
+
+      /* iOS Safari, 16px'den küçük yazı boyutlu input/select'e dokununca
+         sayfayı OTOMATİK yakınlaştırır (metni okunaklı yapmak için) — bu,
+         arama kutusuna veya filtre menülerine her dokunuşta istenmeyen bir
+         "zoom in" gibi görünür. 16px'e çıkarmak bu davranışı tamamen keser.
+         .global-search input gibi daha spesifik seçicileri de geçmesi için
+         aynı özgüllükte tekrar edildi. */
+      input, select, textarea,
+      .global-search input {
+        font-size: 16px;
+      }
     }
   </style>
 </head>
