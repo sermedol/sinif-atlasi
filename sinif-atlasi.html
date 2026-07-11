@@ -4144,7 +4144,8 @@
       const candidates = [text];
 
       const noBuilding = text
-        .replace(/\bNo:?\s*\d+[a-zçğıöşü]?\b/gi, "")
+        .replace(/\bNo:?\s*\d+(?:\/\d+)?[a-zçğıöşü]?\b/gi, "")
+        .replace(/\b(?:İç Kapı|Ic Kapi|Kat)\s*(?:No:?)?\s*\d+[a-zçğıöşü]?\b/gi, "")
         .replace(/\b\d{5}\b/g, "")
         .replace(/\s{2,}/g, " ")
         .replace(/,\s*,/g, ",")
@@ -4162,6 +4163,12 @@
       // En agresif son çare: sokak/cadde adı çoğu zaman Nominatim'de yok —
       // sadece son parça (genelde "ilçe il ülke") çoğunlukla bulunabiliyor.
       if (parts.length > 1) candidates.push(parts[parts.length - 1]);
+
+      // Virgülsüz veya az virgüllü adreslerde son çare: kelime bazlı sondan
+      // kısaltma (çoğu adres "... İlçe İl Türkiye" ile bitiyor).
+      const words = noBuilding.replace(/,/g, " ").split(/\s+/).filter(Boolean);
+      if (words.length > 3) candidates.push(words.slice(-3).join(" "));
+      if (words.length > 2) candidates.push(words.slice(-2).join(" "));
 
       return [...new Set(candidates)].filter((candidate) => candidate.length >= 4);
     }
