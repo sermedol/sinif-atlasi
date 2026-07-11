@@ -4503,15 +4503,34 @@
       `;
     }
 
+    // "Konum" hücresine doğrudan bir Google Haritalar linki yapıştırılmışsa
+    // (…/maps/search/?api=1&query=... gibi), onu olduğu gibi döndürür —
+    // kullanıcının kendi seçtiği/paylaştığı link, bizim türettiğimiz
+    // koordinat veya arama linkinden önceliklidir.
+    function konumRawUrlFor(row) {
+      const keys = Object.keys(row).reduce((acc, key) => { acc[norm(key)] = key; return acc; }, {});
+      const raw = String(row[keys.konum] || "").trim();
+      return /^https?:\/\//i.test(raw) ? raw : null;
+    }
+
     // Konum metniyle birlikte, varsa haritadaki gerçek koordinatları da
     // gösterir ve paylaşılabilir hâle getirir (kopyala + haritada aç).
     function locationSection(row) {
       const locationText = value(row, fields.location);
       if (!locationText) return "";
+      const directUrl = konumRawUrlFor(row);
       const points = pointsFor(row).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
       const showLabels = points.length > 1;
       let coordRows;
-      if (points.length) {
+      if (directUrl) {
+        // "Konum" sütunundaki gerçek Google Haritalar linki — yönlendirme
+        // doğrudan bu olmalı, koordinattan yeniden türetilmiş bir link değil.
+        coordRows = `
+          <div class="coord-row">
+            <a class="inline-action" href="${esc(directUrl)}" target="_blank" rel="noopener">Haritada aç</a>
+          </div>
+        `;
+      } else if (points.length) {
         coordRows = points.map((point) => {
           const mapsUrl = `https://www.google.com/maps?q=${point.lat},${point.lng}`;
           return `
