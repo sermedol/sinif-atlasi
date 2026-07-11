@@ -4107,7 +4107,19 @@
 
     function konumTextFor(row) {
       const keys = Object.keys(row).reduce((acc, key) => { acc[norm(key)] = key; return acc; }, {});
-      return String(row[keys.konum] || "").trim();
+      const raw = String(row[keys.konum] || "").trim();
+      // "Konum" hücresine bazen düz adres yerine bir Google Haritalar arama
+      // linki yapıştırılıyor (…/maps/search/?api=1&query=... veya ...?q=...).
+      // Öyleyse linkin kendisini değil, sorgudaki gerçek adres/koordinat
+      // metnini kullan — yoksa ne regex ne de geocode hiçbir zaman eşleşmez.
+      if (/^https?:\/\//i.test(raw)) {
+        try {
+          const url = new URL(raw);
+          const q = url.searchParams.get("query") || url.searchParams.get("q");
+          if (q) return q.trim();
+        } catch (e) {}
+      }
+      return raw;
     }
 
     const GEOCODE_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -4147,6 +4159,9 @@
 
       const parts = slashFixed.split(",").map((part) => part.trim()).filter(Boolean);
       if (parts.length > 2) candidates.push(parts.slice(-2).join(", "));
+      // En agresif son çare: sokak/cadde adı çoğu zaman Nominatim'de yok —
+      // sadece son parça (genelde "ilçe il ülke") çoğunlukla bulunabiliyor.
+      if (parts.length > 1) candidates.push(parts[parts.length - 1]);
 
       return [...new Set(candidates)].filter((candidate) => candidate.length >= 4);
     }
@@ -4214,8 +4229,8 @@
         const lng = Number(String(row[lngKey]).replace(",", "."));
         if (isPlausibleCoord(lat, lng)) return [{ label: value(row, fields.location), lat, lng }];
       }
-      const konumText = row[keys.konum] || "";
-      const konumMatch = String(konumText).match(/(-?\d{1,3}(?:[.,]\d+)?)\s*[,;]\s*(-?\d{1,3}(?:[.,]\d+)?)/);
+      const konumText = konumTextFor(row);
+      const konumMatch = konumText.match(/(-?\d{1,3}(?:[.,]\d+)?)\s*[,;]\s*(-?\d{1,3}(?:[.,]\d+)?)/);
       if (konumMatch) {
         const lat = Number(konumMatch[1].replace(",", "."));
         const lng = Number(konumMatch[2].replace(",", "."));
