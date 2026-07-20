@@ -8,13 +8,13 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Direniş Haritası</title>
+  <link rel="canonical" href="https://direnis-haritasi.umutsen.org">
   <script>
     (function () {
       try {
         var url = new URL(window.location.href);
-        if (/^https?:$/.test(url.protocol) && url.searchParams.has("v")) {
-          url.searchParams.delete("v");
-          window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+        if (/^https?:$/.test(url.protocol) && (url.pathname !== "/" || url.search || url.hash)) {
+          window.history.replaceState(null, "", "/");
         }
       } catch {}
     })();
@@ -7320,8 +7320,7 @@
     async function copySelectedCaseLink() {
       const row = selectedCase();
       if (!row) return;
-      const url = `${location.origin}${location.pathname}#${encodeURIComponent(row.id)}`;
-      history.replaceState(null, "", `#${encodeURIComponent(row.id)}`);
+      const url = location.origin;
       try {
         await navigator.clipboard.writeText(url);
         els.copyCaseLink.textContent = "Kopyalandı";
