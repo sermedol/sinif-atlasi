@@ -8,9 +8,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css'">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css'">
   <style>
     :root {
       --page: #f3f0ea;
@@ -604,10 +601,9 @@
       position: absolute;
       inset: 0;
       z-index: 1;
-      /* Haritadaki dokunma jestlerini (kaydırma/yakınlaştırma) tamamen
-         Leaflet'e bırakır — tarayıcının kendi pinch-zoom/pan davranışıyla
-         çakışıp sayfayı yatayda kaydırmasını engeller. */
-      touch-action: none;
+      /* Mobilde sayfa kaydırması harita üstünden başlasa bile tarayıcıya
+         bırakılır; haritanın ana thread'i scroll'u kilitlemesin. */
+      touch-action: pan-y pinch-zoom;
     }
 
     .map-hud {
@@ -628,6 +624,36 @@
       background: rgba(255, 255, 255, 0.94);
       box-shadow: 0 8px 18px rgba(20, 20, 20, 0.08);
       cursor: pointer;
+    }
+
+    .mobile-only-action {
+      display: none;
+    }
+
+    .map-deferred-msg {
+      display: grid;
+      place-items: center;
+      height: 100%;
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(238, 243, 248, 0.84)),
+        #dbe7f1;
+    }
+
+    .map-deferred-msg strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .map-deferred-msg span {
+      display: block;
+      max-width: 320px;
+      font-size: 13px;
+      line-height: 1.45;
     }
 
     .map-summary {
@@ -2867,9 +2893,13 @@
 
     @media (max-width: 900px) {
       .shell {
-        height: auto;
-        min-height: 100dvh;
-        overflow: auto;
+        display: block;
+        height: 100dvh;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
       }
 
       .topbar {
@@ -2880,12 +2910,15 @@
       .workspace {
         grid-template-columns: 1fr;
         grid-template-rows: minmax(420px, 56dvh) minmax(360px, auto);
+        min-height: auto;
+        overflow: visible;
       }
 
       .left {
         grid-row: 2;
         min-height: 420px;
         max-height: none;
+        overflow: visible;
       }
 
       .map-stage {
@@ -2927,6 +2960,11 @@
       .hud-button {
         flex: 1 1 auto;
         padding: 9px 10px;
+      }
+
+      .mobile-only-action {
+        display: inline-flex;
+        justify-content: center;
       }
 
       .map-summary {
@@ -3402,6 +3440,7 @@
       .hud-button { min-height: 44px; padding-top: 11px; padding-bottom: 11px; }
       .discovery-open { min-height: 40px; }
       .tab { min-height: 44px; }
+      .case-card { animation: none !important; }
 
       /* iOS Safari, 16px'den küçük yazı boyutlu input/select'e dokununca
          sayfayı OTOMATİK yakınlaştırır (metni okunaklı yapmak için) — bu,
@@ -3455,6 +3494,7 @@
         <div class="map-hud">
           <button id="fitFiltered" class="hud-button" type="button">Görüneni Sığdır</button>
           <button id="focusTurkey" class="hud-button" type="button">Türkiye</button>
+          <button id="reloadPage" class="hud-button mobile-only-action" type="button">Sayfayı Yenile</button>
         </div>
         <div class="map-summary">
           <button class="mini-stat" type="button" data-stat-filter="active"><span>Aktif direnişler</span><strong id="activeCount">0</strong></button>
@@ -3487,7 +3527,12 @@
     // Leaflet + MarkerCluster'ı çok sayıda CDN'den sırayla dene. Biri erişilebilir
     // olana kadar geç; hepsi başarısızsa uygulama haritasız (veri korunur) devam eder.
     // Türkiye'den erişimi farklı olabilen sağlayıcılar dahil edildi.
-    window.__leafletReady = (function () {
+    window.__leafletReady = Promise.resolve(false);
+    window.__loadLeaflet = (function () {
+      var pending = null;
+      return function loadLeafletNow() {
+        if (pending) return pending;
+        pending = (function () {
       var LEAFLET_CDNS = [
         "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js",
         "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js",
@@ -3560,7 +3605,20 @@
           return typeof L !== "undefined" && L && typeof L.markerClusterGroup === "function";
         });
       });
+        })().then(function (ok) {
+          if (!ok) pending = null;
+          return ok;
+        }).catch(function () {
+          pending = null;
+          return false;
+        });
+        return pending;
+      };
     })();
+
+    if (!window.matchMedia || !window.matchMedia("(max-width: 900px), (hover: none), (pointer: coarse)").matches) {
+      window.__leafletReady = window.__loadLeaflet();
+    }
   </script>
   <script>
     const SHEET_ID = "1wuzkNQcQiMKGWWB0l4GfZNfspA0Xwk6NFRMNpDDPlLk";
@@ -3716,6 +3774,7 @@
       caseMeta: document.getElementById("caseMeta"),
       fitFiltered: document.getElementById("fitFiltered"),
       focusTurkey: document.getElementById("focusTurkey"),
+      reloadPage: document.getElementById("reloadPage"),
       closePanel: document.getElementById("closePanel"),
       favoriteCase: document.getElementById("favoriteCase"),
       downloadCase: document.getElementById("downloadCase"),
@@ -3724,19 +3783,42 @@
       statFilters: Array.from(document.querySelectorAll("[data-stat-filter]"))
     };
 
+    const coarsePointerQuery = window.matchMedia ? window.matchMedia("(hover: none), (pointer: coarse)") : null;
+    function isMobileExperience() {
+      const width = window.innerWidth || document.documentElement.clientWidth || 0;
+      return width <= 900 || Boolean(coarsePointerQuery && coarsePointerQuery.matches);
+    }
+
+    function scheduleBackgroundTask(callback) {
+      if ("requestIdleCallback" in window) {
+        return { type: "idle", id: window.requestIdleCallback(callback, { timeout: 120 }) };
+      }
+      return {
+        type: "timer",
+        id: window.setTimeout(() => callback({ didTimeout: true, timeRemaining: () => 0 }), 16)
+      };
+    }
+
+    function cancelBackgroundTask(handle) {
+      if (!handle) return;
+      if (handle.type === "idle" && "cancelIdleCallback" in window) window.cancelIdleCallback(handle.id);
+      else window.clearTimeout(handle.id);
+    }
+
     // Leaflet yüklenemediyse (CDN engeli/kesinti) uygulama harita OLMADAN da
     // çalışsın: veri listesi, istatistikler, detay ve keşif kaybolmasın.
     // Harita, Leaflet asenkron yüklendiği için başta "sahte" (no-op) kurulur —
     // böylece veri (liste, istatistik, detay) Leaflet'i beklemeden anında görünür.
     // Leaflet gelirse aşağıda gerçek haritaya yükseltilir; hiç gelmezse mesaj kalır.
     let HAS_LEAFLET = false;
+    let MAP_LOAD_REQUESTED = false;
     let map, markerLayer;
     function installStubMap() {
       const noop = function () { return noopLayer; };
       const noopLayer = { addLayers: noop, clearLayers: noop, addLayer: noop, addTo: noop, removeLayer: noop };
       map = {
         setView: function () { return map; }, addLayer: noop, removeLayer: noop,
-        on: noop, off: noop, fitBounds: noop, setMaxBounds: noop,
+        on: noop, off: noop, fitBounds: noop, panTo: noop, setMaxBounds: noop,
         invalidateSize: noop, getZoom: function () { return 5; }, flyTo: noop, setZoom: noop
       };
       markerLayer = noopLayer;
@@ -3778,6 +3860,85 @@
       if (mapEl && !mapEl.querySelector(".map-fallback-msg")) {
         mapEl.innerHTML = '<div class="map-fallback-msg" style="display:flex;align-items:center;justify-content:center;height:100%;padding:24px;text-align:center;color:var(--muted);font-size:14px;line-height:1.5">Harita katmanı yüklenemedi (ağ/CDN erişimi engellenmiş olabilir).<br>Mücadele kayıtları ve tüm veriler soldaki listede ve panelde görüntülenmeye devam ediyor.</div>';
       }
+      if (els.fitFiltered) {
+        els.fitFiltered.textContent = "Haritayı tekrar dene";
+        els.fitFiltered.disabled = false;
+      }
+    }
+
+    function setMapButtonsLoaded() {
+      if (els.fitFiltered) {
+        els.fitFiltered.textContent = "Görüneni Sığdır";
+        els.fitFiltered.disabled = false;
+      }
+      if (els.focusTurkey) {
+        els.focusTurkey.textContent = "Türkiye";
+        els.focusTurkey.disabled = false;
+      }
+    }
+
+    function showMapDeferred() {
+      const mapEl = document.getElementById("map");
+      if (mapEl && !mapEl.querySelector(".map-deferred-msg")) {
+        mapEl.innerHTML = `
+          <div class="map-deferred-msg">
+            <div>
+              <strong>Mobil hızlı mod</strong>
+              <span>Harita Android'de sayfayı kilitlemesin diye isteğe bağlı yüklenir. Liste ve detaylar tam çalışır.</span>
+            </div>
+          </div>
+        `;
+      }
+      if (els.fitFiltered) {
+        els.fitFiltered.textContent = "Haritayı yükle";
+        els.fitFiltered.disabled = false;
+      }
+      if (els.focusTurkey && !HAS_LEAFLET) {
+        els.focusTurkey.textContent = "Veriyi yenile";
+        els.focusTurkey.disabled = false;
+      }
+    }
+
+    function requestMapLoad() {
+      if (HAS_LEAFLET) {
+        fitFiltered();
+        return;
+      }
+      MAP_LOAD_REQUESTED = true;
+      if (els.fitFiltered) {
+        els.fitFiltered.textContent = "Harita yükleniyor";
+        els.fitFiltered.disabled = true;
+      }
+      if (typeof window.__loadLeaflet !== "function") {
+        showMapUnavailable();
+        return;
+      }
+      window.__leafletReady = window.__loadLeaflet();
+      window.__leafletReady.then(function (ok) {
+        if (ok) upgradeToRealMap();
+        else showMapUnavailable();
+      }).catch(showMapUnavailable);
+    }
+
+    let mobileMapMode = null;
+    function syncMapInteractionMode() {
+      if (!HAS_LEAFLET || !map) return;
+      const mobile = isMobileExperience();
+      if (mobile === mobileMapMode) return;
+      mobileMapMode = mobile;
+      const setHandler = (handler, enabled) => {
+        if (!handler) return;
+        if (enabled && typeof handler.enable === "function") handler.enable();
+        if (!enabled && typeof handler.disable === "function") handler.disable();
+      };
+      // Mobilde harita parmak hareketini sahiplenmesin; sayfa kaydırması her
+      // zaman kazanır. Masaüstünde normal harita etkileşimi açık kalır.
+      setHandler(map.dragging, !mobile);
+      setHandler(map.touchZoom, !mobile);
+      setHandler(map.doubleClickZoom, !mobile);
+      setHandler(map.boxZoom, !mobile);
+      setHandler(map.keyboard, !mobile);
+      setHandler(map.tap, !mobile);
     }
 
     // Leaflet hazır olunca gerçek haritayı kur ve yeniden çiz.
@@ -3787,10 +3948,22 @@
       HAS_LEAFLET = true;
       const mapEl = document.getElementById("map");
       if (mapEl) mapEl.innerHTML = "";
+      const mobile = isMobileExperience();
       // Harita şimdilik yalnızca Türkiye sınırları içinde çalışır — dünya
       // görünümüne kaydırma/yakınlaştırma engellenir.
       map = L.map("map", {
         zoomControl: true,
+        dragging: !mobile,
+        touchZoom: !mobile,
+        doubleClickZoom: !mobile,
+        boxZoom: !mobile,
+        keyboard: !mobile,
+        tap: !mobile,
+        preferCanvas: true,
+        fadeAnimation: !mobile,
+        zoomAnimation: !mobile,
+        markerZoomAnimation: !mobile,
+        inertia: !mobile,
         worldCopyJump: false,
         maxBounds: [[33, 20], [45, 48]],
         maxBoundsViscosity: 1,
@@ -3800,14 +3973,27 @@
       L.control.attribution({ prefix: false }).addTo(map);
       addResilientTiles(map);
       markerLayer = (typeof L.markerClusterGroup === "function")
-        ? L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 44 })
+        ? L.markerClusterGroup({
+            showCoverageOnHover: false,
+            maxClusterRadius: mobile ? 56 : 44,
+            removeOutsideVisibleBounds: true,
+            animate: !mobile,
+            animateAddingMarkers: false,
+            chunkedLoading: true,
+            chunkInterval: mobile ? 14 : 28,
+            chunkDelay: mobile ? 32 : 16
+          })
         : L.layerGroup();
       map.addLayer(markerLayer);
+      syncMapInteractionMode();
+      setMapButtonsLoaded();
       // Veriler zaten yüklendiyse marker'ları çiz ve görünümü sığdır.
       try { if (typeof render === "function" && cases && cases.length) { render(); } } catch (e) {}
     }
 
-    if (window.__leafletReady && typeof window.__leafletReady.then === "function") {
+    if (isMobileExperience() && !MAP_LOAD_REQUESTED) {
+      showMapDeferred();
+    } else if (window.__leafletReady && typeof window.__leafletReady.then === "function") {
       window.__leafletReady.then(function (ok) {
         if (ok) { upgradeToRealMap(); } else { showMapUnavailable(); }
       });
@@ -3822,6 +4008,9 @@
     let cases = [];
     let points = [];
     let markerByCase = new Map();
+    let markerRenderToken = 0;
+    let markerRenderHandle = null;
+    let pendingMapRevealId = "";
     let selectedId = null;
     let activeTab = "summary";
     let liveCache = new Map();
@@ -3841,6 +4030,8 @@
     let filtersReady = false;
     let baseRows = [];
     let refreshTimer = null;
+    let durationRefreshTimer = null;
+    let lastDurationDayKey = "";
     // Varsayılan görünüm tüm kayıtları gösterir; Süren/Favoriler yalnızca
     // isteğe bağlı daraltma filtreleridir, hiçbir kayıt gizli kalmaz.
     let activeSmartFilter = "all";
@@ -3911,6 +4102,138 @@
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+    }
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const TURKISH_MONTHS = {
+      ocak: 1,
+      subat: 2,
+      mart: 3,
+      nisan: 4,
+      mayis: 5,
+      haziran: 6,
+      temmuz: 7,
+      agustos: 8,
+      eylul: 9,
+      ekim: 10,
+      kasim: 11,
+      aralik: 12
+    };
+
+    function validUtcDate(year, month, day) {
+      const y = Number(year);
+      const m = Number(month);
+      const d = Number(day);
+      if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+      if (y < 1900 || y > 2200 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+      const date = new Date(Date.UTC(y, m - 1, d));
+      if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+      return date;
+    }
+
+    function dateKeyInIstanbul(date = new Date()) {
+      try {
+        const parts = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Europe/Istanbul",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit"
+        }).formatToParts(date);
+        const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+        return `${byType.year}-${byType.month}-${byType.day}`;
+      } catch {
+        return date.toISOString().slice(0, 10);
+      }
+    }
+
+    function utcDateFromKey(key) {
+      const match = String(key || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return match ? validUtcDate(match[1], match[2], match[3]) : null;
+    }
+
+    function todayInIstanbul() {
+      const now = new Date();
+      return utcDateFromKey(dateKeyInIstanbul(now)) || validUtcDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+    }
+
+    function parseStartDate(text) {
+      const raw = String(text || "").replace(/\u00a0/g, " ").trim();
+      if (!raw) return null;
+
+      let match = raw.match(/Date\((\d{4})\s*,\s*(\d{1,2})\s*,\s*(\d{1,2})/);
+      if (match) return validUtcDate(match[1], Number(match[2]) + 1, match[3]);
+
+      match = raw.match(/\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+      if (match) return validUtcDate(match[1], match[2], match[3]);
+
+      match = raw.match(/\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b/);
+      if (match) return validUtcDate(match[3], match[2], match[1]);
+
+      const normalized = norm(raw).replace(/['’]/g, " ");
+      match = normalized.match(/\b(\d{1,2})\s+(ocak|subat|mart|nisan|mayis|haziran|temmuz|agustos|eylul|ekim|kasim|aralik)\s+(\d{4})\b/);
+      if (match) return validUtcDate(match[3], TURKISH_MONTHS[match[2]], match[1]);
+
+      return null;
+    }
+
+    function formatShortDateTR(date) {
+      if (!date) return "";
+      return date.toLocaleDateString("tr-TR", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
+    }
+
+    function shouldShowDayCounter(row) {
+      const kind = row?.statusKind || statusKind(value(row, fields.status));
+      if (kind === "won") return false;
+      const statusText = norm(value(row, fields.status));
+      return !statusText.includes("kazanimla sonuclandi");
+    }
+
+    function resistanceDuration(row) {
+      if (!row || !shouldShowDayCounter(row)) return null;
+      const start = parseStartDate(value(row, fields.startDate)) || parseStartDate(value(row, fields.time));
+      if (!start) return null;
+      const today = todayInIstanbul();
+      if (!today) return null;
+      const days = Math.floor((today.getTime() - start.getTime()) / DAY_MS) + 1;
+      if (!Number.isFinite(days) || days < 1) return null;
+      return {
+        days,
+        label: `${days}. gün`,
+        detail: `${days}. gün`,
+        startLabel: formatShortDateTR(start)
+      };
+    }
+
+    function durationTag(row) {
+      const duration = resistanceDuration(row);
+      return duration ? `<span class="tag">${esc(duration.label)}</span>` : "";
+    }
+
+    function durationClaim(row) {
+      const duration = resistanceDuration(row);
+      return duration ? claim("Gün sayacı", `${duration.detail}${duration.startLabel ? ` (${duration.startLabel} başlangıç)` : ""}`) : "";
+    }
+
+    function durationSnapshot(row) {
+      const duration = resistanceDuration(row);
+      return duration ? `
+            <div>
+              <span>Gün sayacı</span>
+              <strong>${esc(duration.label)}</strong>
+            </div>` : "";
+    }
+
+    function scheduleDurationRefresh() {
+      if (durationRefreshTimer) window.clearTimeout(durationRefreshTimer);
+      lastDurationDayKey = dateKeyInIstanbul();
+      durationRefreshTimer = window.setTimeout(() => {
+        const currentKey = dateKeyInIstanbul();
+        if (currentKey !== lastDurationDayKey) {
+          lastDurationDayKey = currentKey;
+          render({ fitBounds: false });
+        }
+        scheduleDurationRefresh();
+      }, 60 * 60 * 1000);
     }
 
     function shortText(text, max = 110) {
@@ -4332,6 +4655,7 @@
 
     let geocodeQueueRunning = false;
     async function geocodeMissingAddressesInBackground() {
+      if (isMobileExperience() && !HAS_LEAFLET) return;
       if (geocodeQueueRunning) return;
       geocodeQueueRunning = true;
       try {
@@ -4497,6 +4821,36 @@
       return marker;
     }
 
+    function addMarkerBatch(markers) {
+      if (!markers.length) return;
+      if (typeof markerLayer.addLayers === "function") markerLayer.addLayers(markers);
+      else markers.forEach((marker) => markerLayer.addLayer(marker));
+    }
+
+    function fitBoundsForMarkers(markers, pad = 0.12, maxZoom = 7) {
+      if (!HAS_LEAFLET || !markers.length) return;
+      const bounds = L.featureGroup(markers).getBounds();
+      if (bounds.isValid()) map.fitBounds(bounds.pad(pad), { maxZoom, animate: !isMobileExperience() });
+    }
+
+    function revealCaseOnMap(id) {
+      const markers = markerByCase.get(id) || [];
+      if (!markers.length) return false;
+      const marker = markers[0];
+      const reveal = () => {
+        map.panTo(marker.getLatLng(), { animate: !isMobileExperience(), duration: 0.35 });
+        window.setTimeout(() => marker.openPopup(), isMobileExperience() ? 80 : 220);
+      };
+      if (typeof markerLayer.zoomToShowLayer === "function") markerLayer.zoomToShowLayer(marker, reveal);
+      else reveal();
+      return true;
+    }
+
+    function flushPendingMapReveal() {
+      if (!pendingMapRevealId) return;
+      if (revealCaseOnMap(pendingMapRevealId)) pendingMapRevealId = "";
+    }
+
     function smartFilterMatches(row) {
       if (activeSmartFilter === "active") return row.statusKind === "active";
       if (activeSmartFilter === "favorites") return favoriteIds.has(row.id);
@@ -4528,12 +4882,42 @@
       return points.filter((entry) => visibleIds.has(entry.row.id));
     }
 
-    function renderMarkers() {
+    function renderMarkers(options = {}) {
       if (!HAS_LEAFLET) return [];
+      if (markerRenderHandle) cancelBackgroundTask(markerRenderHandle);
+      markerRenderHandle = null;
+      const token = ++markerRenderToken;
       markerLayer.clearLayers();
       markerByCase = new Map();
-      const markers = filteredPoints().map(buildMarker);
-      if (markers.length) markerLayer.addLayers(markers);
+      const entries = filteredPoints();
+      const markers = [];
+      if (!entries.length) return markers;
+      const mobile = isMobileExperience();
+      const batchSize = mobile ? 24 : 80;
+      let index = 0;
+      const now = () => (window.performance && performance.now ? performance.now() : Date.now());
+      const drawChunk = (deadline) => {
+        if (token !== markerRenderToken) return;
+        const started = now();
+        const batch = [];
+        while (index < entries.length && batch.length < batchSize) {
+          batch.push(buildMarker(entries[index]));
+          index += 1;
+          if (mobile && now() - started > 8) break;
+          if (!mobile && deadline && typeof deadline.timeRemaining === "function" && deadline.timeRemaining() < 4) break;
+        }
+        markers.push(...batch);
+        addMarkerBatch(batch);
+        flushPendingMapReveal();
+        if (index < entries.length) {
+          markerRenderHandle = scheduleBackgroundTask(drawChunk);
+          return;
+        }
+        markerRenderHandle = null;
+        flushPendingMapReveal();
+        if (options.fitBounds !== false) fitBoundsForMarkers(markers, 0.12, 7);
+      };
+      drawChunk();
       return markers;
     }
 
@@ -4554,6 +4938,7 @@
             <span class="tag">${esc(value(row, fields.status))}</span>
             ${favoriteIds.has(row.id) ? '<span class="tag">Favori</span>' : ""}
             ${row.isDiscovered ? '<span class="tag">Canlı keşif</span>' : ""}
+            ${durationTag(row)}
             <span class="tag">${row.pointCount ? `${row.pointCount} nokta` : "haritasız"}</span>
           </div>
         </button>
@@ -4605,12 +4990,10 @@
     function setSmartFilter(filter) {
       activeSmartFilter = filter || "all";
       resetStandardFilters();
-      render();
       const rows = filteredCases();
       if (rows.length) selectedId = rows[0].id;
-      renderList(rows);
-      renderDetail();
-      fitFiltered();
+      else selectedId = null;
+      render();
     }
 
     function renderStats(rows) {
@@ -4627,16 +5010,12 @@
     function render(options = {}) {
       if (!filtersReady) populateFilters();
       const rows = filteredCases();
-      const markers = renderMarkers();
+      renderMarkers({ fitBounds: options.fitBounds });
       renderList(rows);
       renderStats(rows);
       if (!selectedId && rows.length) selectedId = rows[0].id;
       renderDetail();
-      scheduleMediaWarmup(rows);
-      if (HAS_LEAFLET && markers.length && options.fitBounds !== false) {
-        const bounds = L.featureGroup(markers).getBounds();
-        if (bounds.isValid()) map.fitBounds(bounds.pad(0.12), { maxZoom: 7 });
-      }
+      if (!isMobileExperience()) scheduleMediaWarmup(rows);
     }
 
     function claim(label, body) {
@@ -4731,17 +5110,9 @@
       setPanelOpen(true);
       renderList(filteredCases());
       renderDetail();
-      scheduleMediaWarmup([selectedCase(), ...filteredCases()], { delay: 0 });
+      scheduleMediaWarmup([selectedCase(), ...filteredCases()], { delay: 0, limit: isMobileExperience() ? 1 : undefined });
       if (options.focusMap === false) return;
-      const markers = markerByCase.get(id) || [];
-      if (!markers.length) return;
-      const marker = markers[0];
-      const reveal = () => {
-        map.panTo(marker.getLatLng(), { animate: true, duration: 0.45 });
-        window.setTimeout(() => marker.openPopup(), 220);
-      };
-      if (typeof markerLayer.zoomToShowLayer === "function") markerLayer.zoomToShowLayer(marker, reveal);
-      else reveal();
+      if (!revealCaseOnMap(id)) pendingMapRevealId = id;
     }
 
     function renderDetail() {
@@ -4756,6 +5127,7 @@
         <span class="tag">${esc(value(row, fields.status))}</span>
         ${favoriteIds.has(row.id) ? '<span class="tag">Favori</span>' : ""}
         ${row.isDiscovered ? '<span class="tag">Canlı keşif</span>' : ""}
+        ${durationTag(row)}
         <span class="tag">${row.pointCount ? `${row.pointCount} harita noktası` : "haritasız kayıt"}</span>
       `;
       els.favoriteCase.textContent = favoriteIds.has(row.id) ? "Favoriden Çıkar" : "Favoriye Al";
@@ -5095,12 +5467,14 @@
               <span>Alan</span>
               <strong>${esc(value(row, fields.area) || "Belirsiz")}</strong>
             </div>
+            ${durationSnapshot(row)}
           </div>
           ${locationSection(row)}
           ${claim("Sendika/Dernek/Kurum", value(row, fields.actors))}
           ${claim("İşkolu", value(row, fields.sector))}
           ${claim("Neden/Talepler", value(row, fields.reason))}
           ${claim("Başlangıç tarihi", value(row, fields.startDate))}
+          ${durationClaim(row)}
           ${claim("Zaman/Gün", value(row, fields.time))}
           ${claim("Eylem biçimi", value(row, fields.method))}
           ${claim("Bilgiler", value(row, fields.latest))}
@@ -6745,7 +7119,8 @@
 
     function scheduleMediaWarmup(rows = filteredCases(), options = {}) {
       if (navigator.onLine === false) return;
-      const targets = mediaRowsToWarm(rows, options.limit || MEDIA_PREFETCH_LIMIT);
+      const limit = options.limit ?? (isMobileExperience() ? 1 : MEDIA_PREFETCH_LIMIT);
+      const targets = mediaRowsToWarm(rows, limit);
       if (!targets.length) return;
       mediaWarmQueue = targets;
       if (mediaWarmTimer) window.clearTimeout(mediaWarmTimer);
@@ -6778,6 +7153,8 @@
 
     function startMediaAutoRefresh() {
       if (mediaAutoRefreshTimer) window.clearInterval(mediaAutoRefreshTimer);
+      mediaAutoRefreshTimer = null;
+      if (isMobileExperience()) return;
       mediaAutoRefreshTimer = window.setInterval(() => {
         scheduleMediaWarmup(filteredCases(), { delay: 80, limit: MEDIA_PREFETCH_LIMIT });
       }, MEDIA_REFRESH_MS);
@@ -7024,6 +7401,7 @@
           ${claim("İşkolu", value(row, fields.sector))}
           ${claim("Neden/Talepler", value(row, fields.reason))}
           ${claim("Başlangıç tarihi", value(row, fields.startDate))}
+          ${durationClaim(row)}
           ${claim("Zaman/Gün", value(row, fields.time))}
           ${claim("Eylem biçimi", value(row, fields.method))}
           ${claim("Durum", value(row, fields.status))}
@@ -7105,12 +7483,14 @@
     }
 
     function fitFiltered() {
-      if (!HAS_LEAFLET) return;
+      if (!HAS_LEAFLET) {
+        requestMapLoad();
+        return;
+      }
       const markers = [];
       markerByCase.forEach((items) => markers.push(...items));
       if (!markers.length) return;
-      const bounds = L.featureGroup(markers).getBounds();
-      if (bounds.isValid()) map.fitBounds(bounds.pad(0.16), { maxZoom: 8 });
+      fitBoundsForMarkers(markers, 0.16, 8);
     }
 
     function useRows(rawRows, sourceLabel, options = {}) {
@@ -7207,7 +7587,14 @@
     });
     [els.areaFilter, els.statusFilter].forEach((el) => el.addEventListener("change", render));
     els.fitFiltered.addEventListener("click", fitFiltered);
-    els.focusTurkey.addEventListener("click", () => map.fitBounds([[35.7, 25.4], [42.2, 45.0]]));
+    els.focusTurkey.addEventListener("click", () => {
+      if (!HAS_LEAFLET) {
+        refreshOnlineSources();
+        return;
+      }
+      map.fitBounds([[35.7, 25.4], [42.2, 45.0]], { animate: !isMobileExperience() });
+    });
+    if (els.reloadPage) els.reloadPage.addEventListener("click", () => window.location.reload());
     els.closePanel.addEventListener("click", () => setPanelOpen(false));
     els.smartFilters.forEach((button) => {
       button.addEventListener("click", () => setSmartFilter(
@@ -7227,6 +7614,15 @@
       refreshOnlineSources();
     });
     window.addEventListener("offline", updateOnlineState);
+    let resizeSyncTimer = null;
+    window.addEventListener("resize", () => {
+      if (resizeSyncTimer) window.clearTimeout(resizeSyncTimer);
+      resizeSyncTimer = window.setTimeout(() => {
+        syncMapInteractionMode();
+        if (HAS_LEAFLET) map.invalidateSize();
+        startMediaAutoRefresh();
+      }, 160);
+    }, { passive: true });
     document.querySelectorAll(".tab").forEach((button) => {
       button.addEventListener("click", () => {
         activeTab = button.dataset.tab;
@@ -7240,6 +7636,7 @@
     applyFocusMode(false);
     configureRefresh();
     startMediaAutoRefresh();
+    scheduleDurationRefresh();
     updateOnlineState();
     // Önce eski/yerel yedek veriyi gösterip sonra canlı veriyle değiştirmek
     // "eski kayıtlar görünüp sonra yenileniyor" hissi veriyordu. Bunun yerine
