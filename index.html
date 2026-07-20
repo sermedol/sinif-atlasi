@@ -4450,6 +4450,29 @@
       return konumEntriesFor(row).filter((entry) => /^https?:\/\//i.test(entry));
     }
 
+    function decodeLocationText(text) {
+      let value = String(text || "").trim();
+      if (!value) return "";
+      if (/%[0-9a-f]{2}|\+/i.test(value)) {
+        try {
+          value = decodeURIComponent(value.replace(/\+/g, " "));
+        } catch (e) {
+          value = value.replace(/\+/g, " ");
+        }
+      }
+      return value
+        .replace(/\s+/g, " ")
+        .replace(/\s*,\s*/g, ", ")
+        .trim();
+    }
+
+    function humanLocationText(text) {
+      const value = String(text || "").trim();
+      if (!value) return "";
+      if (/^https?:\/\//i.test(value)) return extractAddressFromEntry(value);
+      return decodeLocationText(value);
+    }
+
     // Bir "Konum" girdisi bir Google Haritalar arama linkiyse (…/maps/search/
     // ?api=1&query=... veya ...?q=...), linkin kendisini değil, sorgudaki
     // gerçek adres/koordinat metnini döndürür — yoksa ne regex ne de geocode
@@ -4460,10 +4483,10 @@
         try {
           const url = new URL(text);
           const q = url.searchParams.get("query") || url.searchParams.get("q");
-          if (q) return q.trim();
+          if (q) return decodeLocationText(q);
         } catch (e) {}
       }
-      return text;
+      return decodeLocationText(text);
     }
 
     function konumTextFor(row) {
@@ -4560,7 +4583,7 @@
           );
           const data = await response.json();
           if (data && data.result && isPlausibleCoord(data.result.lat, data.result.lng)) {
-            result = data.result;
+            result = { ...data.result, label: humanLocationText(data.result.label || candidates[i]) };
             break;
           }
         } catch {}
@@ -4589,7 +4612,7 @@
         );
         const data = await response.json();
         if (data && data.result && isPlausibleCoord(data.result.lat, data.result.lng)) {
-          return data.result;
+          return { ...data.result, label: humanLocationText(data.result.label || link) };
         }
       } catch {}
       return null;
@@ -4673,16 +4696,17 @@
       if (latKey && lngKey) {
         const lat = Number(String(row[latKey]).replace(",", "."));
         const lng = Number(String(row[lngKey]).replace(",", "."));
-        if (isPlausibleCoord(lat, lng)) return [{ label: value(row, fields.location), lat, lng }];
+        if (isPlausibleCoord(lat, lng)) return [{ label: humanLocationText(value(row, fields.location)), lat, lng }];
       }
       const entries = konumEntriesFor(row);
       if (!entries.length) return null;
-      const locationText = value(row, fields.location);
+      const locationText = humanLocationText(value(row, fields.location));
       const resolved = [];
       entries.forEach((entry, index) => {
         const cached = parseCoordFromText(entry) || geocodeCache[norm(entry)];
         if (cached && isPlausibleCoord(cached.lat, cached.lng)) {
-          const label = cached.label || (entries.length > 1 ? `${locationText} (${index + 1})` : locationText);
+          const cachedLabel = humanLocationText(cached.label || "");
+          const label = cachedLabel || (entries.length > 1 ? `${locationText} (${index + 1})` : locationText);
           resolved.push({ label, lat: cached.lat, lng: cached.lng });
         }
       });
@@ -4764,6 +4788,7 @@
     }
 
     function popupFor(entry) {
+      const locationLabel = humanLocationText(entry.point.label || value(entry.row, fields.location));
       return `
         <article class="popup-mini">
           <h3>${esc(value(entry.row, fields.title))}</h3>
@@ -4771,7 +4796,7 @@
             <span class="tag">${esc(value(entry.row, fields.area))}</span>
             <span class="tag">${esc(value(entry.row, fields.status))}</span>
           </div>
-          <p>${esc(entry.point.label || value(entry.row, fields.location))}</p>
+          <p>${esc(locationLabel)}</p>
           <button type="button" data-open-case="${esc(entry.row.id)}">Detaylar</button>
         </article>
       `;
@@ -5012,7 +5037,8 @@
     // şubesi/deposu olan bir direniş) — bu durumda her biri ayrı bir
     // "Haritada aç" satırı olarak gösterilir.
     function locationSection(row) {
-      const locationText = value(row, fields.location);
+      const rawLocationText = value(row, fields.location);
+      const locationText = humanLocationText(rawLocationText);
       if (!locationText) return "";
       const directUrls = konumRawUrlsFor(row);
       const points = pointsFor(row).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
@@ -5024,7 +5050,8 @@
         // türetilmiş bir link değil.
         coordRows = directUrls.map((url, index) => {
           const cached = geocodeCache[norm(url)];
-          const label = (cached && cached.label) || (directUrls.length > 1 ? `${locationText} (${index + 1})` : null);
+          const cachedLabel = humanLocationText((cached && cached.label) || "");
+          const label = cachedLabel || (directUrls.length > 1 ? `${locationText} (${index + 1})` : null);
           return `
             <div class="coord-row">
               ${showLabels && label ? `<span class="coord-label">${esc(label)}</span>` : ""}
@@ -5035,9 +5062,10 @@
       } else if (points.length) {
         coordRows = points.map((point) => {
           const mapsUrl = `https://www.google.com/maps?q=${point.lat},${point.lng}`;
+          const pointLabel = humanLocationText(point.label || locationText);
           return `
             <div class="coord-row">
-              ${showLabels ? `<span class="coord-label">${esc(point.label || locationText)}</span>` : ""}
+              ${showLabels ? `<span class="coord-label">${esc(pointLabel)}</span>` : ""}
               <a class="inline-action" href="${esc(mapsUrl)}" target="_blank" rel="noopener">Haritada aç</a>
             </div>
           `;
