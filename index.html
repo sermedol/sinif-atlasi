@@ -617,9 +617,15 @@
       position: absolute;
       inset: 0;
       z-index: 1;
-      /* Mobilde sayfa kaydırması harita üstünden başlasa bile tarayıcıya
-         bırakılır; haritanın ana thread'i scroll'u kilitlemesin. */
+      /* Harita yüklenmeden önce sayfa scroll'u doğal kalsın; gerçek Leaflet
+         haritası hazır olunca sürükleme için aşağıdaki sınıf devreye girer. */
       touch-action: pan-y pinch-zoom;
+    }
+
+    #map.is-map-interactive {
+      touch-action: none;
+      -ms-touch-action: none;
+      overscroll-behavior: contain;
     }
 
     .map-hud {
@@ -3841,6 +3847,7 @@
     // Leaflet gelirse aşağıda gerçek haritaya yükseltilir; hiç gelmezse mesaj kalır.
     let HAS_LEAFLET = false;
     let map, markerLayer;
+    const MAP_PAN_BOUNDS = [[10, -10], [62, 80]];
     function installStubMap() {
       const noop = function () { return noopLayer; };
       const noopLayer = { addLayers: noop, clearLayers: noop, addLayer: noop, addTo: noop, removeLayer: noop };
@@ -3901,14 +3908,19 @@
         if (enabled && typeof handler.enable === "function") handler.enable();
         if (!enabled && typeof handler.disable === "function") handler.disable();
       };
-      // Mobilde harita parmak hareketini sahiplenmesin; sayfa kaydırması her
-      // zaman kazanır. Masaüstünde normal harita etkileşimi açık kalır.
-      setHandler(map.dragging, !mobile);
-      setHandler(map.touchZoom, !mobile);
-      setHandler(map.doubleClickZoom, !mobile);
+      const mapEl = map.getContainer();
+      if (mapEl) {
+        mapEl.classList.add("is-map-interactive");
+        mapEl.style.touchAction = "none";
+        mapEl.style.msTouchAction = "none";
+        mapEl.style.overscrollBehavior = "contain";
+      }
+      setHandler(map.dragging, true);
+      setHandler(map.touchZoom, true);
+      setHandler(map.doubleClickZoom, true);
       setHandler(map.boxZoom, !mobile);
       setHandler(map.keyboard, !mobile);
-      setHandler(map.tap, !mobile);
+      setHandler(map.tap, true);
     }
 
     // Leaflet hazır olunca gerçek haritayı kur ve yeniden çiz.
@@ -3919,24 +3931,25 @@
       const mapEl = document.getElementById("map");
       if (mapEl) mapEl.innerHTML = "";
       const mobile = isMobileExperience();
-      // Harita şimdilik yalnızca Türkiye sınırları içinde çalışır — dünya
-      // görünümüne kaydırma/yakınlaştırma engellenir.
+      // Harita Türkiye odağında kalır; sınır düşük zoom ve mobil görünümde
+      // sürükleme alanı kalacak kadar geniş tutulur.
       map = L.map("map", {
         zoomControl: true,
-        dragging: !mobile,
-        touchZoom: !mobile,
-        doubleClickZoom: !mobile,
+        dragging: true,
+        touchZoom: true,
+        doubleClickZoom: true,
         boxZoom: !mobile,
         keyboard: !mobile,
-        tap: !mobile,
+        tap: true,
+        scrollWheelZoom: false,
         preferCanvas: true,
         fadeAnimation: !mobile,
         zoomAnimation: !mobile,
         markerZoomAnimation: !mobile,
         inertia: !mobile,
         worldCopyJump: false,
-        maxBounds: [[33, 20], [45, 48]],
-        maxBoundsViscosity: 1,
+        maxBounds: MAP_PAN_BOUNDS,
+        maxBoundsViscosity: 0.85,
         minZoom: 5,
         attributionControl: false
       }).setView([39, 35], 6);
