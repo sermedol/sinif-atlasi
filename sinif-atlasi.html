@@ -3507,6 +3507,9 @@
 
       <section class="map-stage" aria-label="Coğrafi istihbarat">
         <div id="map"></div>
+        <div class="map-hud" aria-label="Harita kontrolleri">
+          <button id="fitFiltered" class="hud-button" type="button">Görüneni Sığdır</button>
+        </div>
         <div class="map-summary">
           <button class="mini-stat" type="button" data-stat-filter="active"><span>Aktif direnişler</span><strong id="activeCount">0</strong></button>
         </div>
@@ -3796,6 +3799,7 @@
       detailPanel: document.getElementById("detailPanel"),
       visibleCount: document.getElementById("visibleCount"),
       activeCount: document.getElementById("activeCount"),
+      fitFiltered: document.getElementById("fitFiltered"),
       caseTitle: document.getElementById("caseTitle"),
       caseMeta: document.getElementById("caseMeta"),
       closePanel: document.getElementById("closePanel"),
@@ -4765,7 +4769,7 @@
         icon: iconFor(entry.row),
         title: value(entry.row, fields.title)
       }).bindPopup(popupFor(entry), {
-        // Haritanın üstündeki "Görüneni Sığdır"/"Türkiye" düğmeleri (HUD)
+        // Haritanın üstündeki HUD düğmeleri Leaflet'ten bağımsız konumlanır.
         // sabit konumlu — Leaflet bunların yerini bilmediği için, üstteki
         // bir marker'ın popup'ı otomatik kaydırma (autoPan) sırasında
         // düğmelerin ARKASINDA kalabiliyordu. Bu boşluk, popup'ın her zaman
@@ -7448,6 +7452,18 @@
       fitBoundsForMarkers(markers, 0.16, 8);
     }
 
+    function requestFitFiltered() {
+      if (HAS_LEAFLET) {
+        fitFiltered();
+        return;
+      }
+      if (window.__leafletReady && typeof window.__leafletReady.then === "function") {
+        window.__leafletReady.then((ok) => {
+          if (ok) window.setTimeout(fitFiltered, 0);
+        });
+      }
+    }
+
     function rowsFingerprint(rows) {
       try {
         return JSON.stringify(rows || []);
@@ -7562,6 +7578,7 @@
         activeSmartFilter === button.dataset.statFilter ? "all" : button.dataset.statFilter
       ));
     });
+    if (els.fitFiltered) els.fitFiltered.addEventListener("click", requestFitFiltered);
     els.favoriteCase.addEventListener("click", toggleSelectedFavorite);
     els.downloadCase.addEventListener("click", downloadSelectedCase);
     els.copyCaseLink.addEventListener("click", copySelectedCaseLink);
